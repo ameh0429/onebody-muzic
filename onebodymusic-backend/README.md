@@ -1,6 +1,6 @@
 # OnebodyMusic backend
 
-NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, and role guards are implemented. Business CRUD endpoints remain outside this task.
+NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, and artist management are implemented. Other library modules remain deferred.
 
 ## Install and start
 
@@ -214,7 +214,7 @@ Registration body:
 }
 ```
 
-Names are trimmed and must be 2–200 characters; email addresses are trimmed, lowercased, and validated (maximum 254 characters). Passwords must be 12–128 characters and contain a non-whitespace character; confirmation must match exactly. Passwords are never trimmed. Role, status, and other unknown request fields are rejected with `400`; duplicate email returns `409`, including concurrent requests. Passwords use Argon2id (19 MiB memory, two iterations, one lane). Registration does not allow immediate login: activation/approval endpoints are outside this task. Use the existing seeded ACTIVE administrator when testing login before member approval is implemented.
+Names are trimmed and must be 2–200 characters; email addresses are trimmed, lowercased, and validated (maximum 254 characters). Passwords must be 12–128 characters and contain a non-whitespace character; confirmation must match exactly. Passwords are never trimmed. Role, status, and other unknown request fields are rejected with `400`; duplicate email returns `409`, including concurrent requests. Passwords use Argon2id (19 MiB memory, two iterations, one lane). Registration does not allow immediate login: an ACTIVE administrator must approve the account through `PATCH /api/v1/users/:id/status`. Use the existing seeded ACTIVE administrator to approve the first members.
 
 Login body:
 
@@ -321,3 +321,62 @@ npm run test:users:db
 ```
 
 Tests remove only their uniquely named fixtures. User management code is under `src/users/` with `UsersModule`, `UsersController`, `UsersService`, pagination/update DTOs, and service tests. There is no user deletion endpoint in this task.
+
+## Artists
+
+Artist routes appear under **Artists** in Swagger and require a JWT for a currently ACTIVE user. ADMIN accounts can create/update/delete; both roles can read.
+
+| Method and path | Access | Response |
+| --- | --- | --- |
+| `POST /api/v1/artists` | ADMIN | `201` artist profile with counts. |
+| `GET /api/v1/artists` | Authenticated | `200` paginated profiles with counts. |
+| `GET /api/v1/artists/:id` | Authenticated | `200` artist details with counts. |
+| `PATCH /api/v1/artists/:id` | ADMIN | `200` updated profile. |
+| `DELETE /api/v1/artists/:id` | ADMIN | `204` with no body, only if no albums or songs reference it. |
+
+Apply the new uniqueness migration before using these endpoints:
+
+```sh
+npm run db:migrate
+npm run db:status
+npm run start:dev
+```
+
+Migration `002-artist-name-uniqueness` adds a PostgreSQL unique expression index using lowercasing and surrounding/repeated whitespace normalization. Existing duplicate normalized names make the migration fail safely; it does not rename, merge, or delete existing profiles. Resolve duplicates deliberately, preserving references, then retry. To identify existing conflicts in pgAdmin:
+
+```sql
+SELECT lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g'))) AS normalized_name,
+       array_agg(id) AS artist_ids, count(*) AS occurrences
+FROM "Artist"
+GROUP BY lower(btrim(regexp_replace(name, '[[:space:]]+', ' ', 'g')))
+HAVING count(*) > 1;
+```
+
+Rolling back this migration removes only the unique index. Keep it applied to preserve name uniqueness across concurrent requests and multiple API instances.
+
+Example create body:
+
+```json
+{
+  "name": "Hillsong Worship",
+  "biography": "Church worship music collective.",
+  "imageUrl": "https://images.example.org/artists/hillsong.jpg",
+  "imagePublicId": "onebodymusic/artists/hillsong"
+}
+```
+
+Only `name` is required. Names are trimmed and repeated whitespace is collapsed, preserving display case, and must be 1–200 characters. Case-insensitive duplicate names return `409` on both create and update. Biography is optional (up to 5000 characters); image URLs must be valid HTTPS URLs without embedded credentials (up to 2048 characters), and image public IDs are optional strings of 1–255 characters. Image fields are references only: this module uploads, downloads, and deletes no files. File upload endpoints are deferred.
+
+PATCH accepts the same fields, all optional, with at least one field required. Omitted fields stay unchanged; biography and either image reference may be explicitly cleared with `null`. A name cannot be `null` or blank. Unknown fields are rejected.
+
+List example: `/api/v1/artists?page=1&limit=20&search=hillsong`. Page defaults to 1 (1–1000000), limit to 20 (1–100). Search is a case-insensitive literal substring; `%`, `_`, and backslash do not act as wildcards. Results are ordered by name then UUID and use `{ data, page, limit, total, totalPages }`. Each profile includes `id`, `name`, `biography`, `imageUrl`, `imagePublicId`, `createdAt`, `updatedAt`, `albumCount`, and `songCount`. Counts use independent indexed database subqueries, avoiding inflated counts from joining albums to songs.
+
+Updates and deletes lock the artist row inside a transaction. Deletion returns `409` if any album or song references the artist; existing restrictive foreign keys remain the final protection against concurrent inserts. Remove/reassign references explicitly before retrying; the API never cascades deletion of music records or media. Invalid DTOs/UUIDs/query fields return `400`, missing or invalid authentication `401`, member writes `403`, and missing profiles `404`, using the shared JSON error format.
+
+Sources are in `src/artists/` (`ArtistsModule`, thin `ArtistsController`, `ArtistsService`, DTOs, and service tests). Validation/authorization tests run in `npm test`. For a dedicated migrated PostgreSQL database with `TEST_DATABASE_URL` configured:
+
+```sh
+npm run test:artists:db
+```
+
+The integration test starts the compiled API and checks role access, create/update/concurrent uniqueness, literal search, pagination, optional-field clearing, album/song counts, and safe deletion. It cleans up only uniquely named test fixtures.

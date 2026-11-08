@@ -29,7 +29,7 @@ test('PostgreSQL schema, relations, safe serialization, and administrator seed',
     await db.authenticate();
     await t.test('connects and reports an applied, repeatable migration', async () => {
       const migrator = createMigrator(db);
-      assert.equal((await migrator.executed()).length, 1);
+      assert.deepEqual((await migrator.executed()).map((migration) => migration.name), ['001-initial-schema', '002-artist-name-uniqueness']);
       assert.equal((await migrator.up()).length, 0);
     });
     const environment = { ADMIN_NAME: 'Integration Administrator', ADMIN_EMAIL: adminEmail, ADMIN_PASSWORD: password };
