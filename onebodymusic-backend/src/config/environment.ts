@@ -2,6 +2,11 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, Matches, Max, Min, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^postgres(ql)?:\/\/[^\s]+$/, { message: 'DATABASE_URL must be a PostgreSQL connection URL' })
+  DATABASE_URL!: string;
+
   @IsIn(['development', 'test', 'production'])
   NODE_ENV: string = 'development';
 

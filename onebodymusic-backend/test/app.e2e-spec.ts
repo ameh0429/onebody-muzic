@@ -5,6 +5,10 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import request from 'supertest';
+import { DatabaseModule } from '../src/database/database.module';
+
+@Module({})
+class TestDatabaseModule {}
 import { configureApp } from '../src/configure-app';
 
 class ValidationProbeDto {
@@ -44,9 +48,10 @@ describe('API foundation', () => {
   let app: INestApplication;
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
+    process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();

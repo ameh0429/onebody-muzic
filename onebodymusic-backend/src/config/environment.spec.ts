@@ -1,4 +1,6 @@
-import { validateEnvironment } from './environment';
+import { validateEnvironment as validate } from './environment';
+
+const validateEnvironment = (config: Record<string, unknown>) => validate({ DATABASE_URL: 'postgresql://localhost/onebodymusic', ...config });
 
 describe('startup configuration validation', () => {
   it('parses explicit origins and applies documented defaults', () => {
@@ -11,6 +13,9 @@ describe('startup configuration validation', () => {
     });
   it.each(['0', '65536', 'abc', '3.5'])('rejects invalid port %s', (port) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', PORT: port })).toThrow('PORT');
+  });
+  it.each([undefined, '', 'mysql://localhost/db', 'postgresql://'])('rejects invalid database URL %s', (url) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', DATABASE_URL: url })).toThrow('DATABASE_URL');
   });
   it('rejects invalid runtime modes', () => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', NODE_ENV: 'invalid' })).toThrow('NODE_ENV');
