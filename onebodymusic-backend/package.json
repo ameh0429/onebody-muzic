@@ -24,7 +24,8 @@
     "db:seed:prod": "node dist/database/seed.js",
     "test:auth:db": "npm run build && tsx --test test/auth.database.integration.ts",
     "test:users:db": "npm run build && tsx --test test/users.database.integration.ts",
-    "test:artists:db": "npm run build && tsx --test test/artists.database.integration.ts"
+    "test:artists:db": "npm run build && tsx --test test/artists.database.integration.ts",
+    "test:albums:db": "npm run build && tsx --test test/albums.database.integration.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",

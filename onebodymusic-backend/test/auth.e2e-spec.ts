@@ -1,3 +1,4 @@
+import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { UsersService } from '../src/users/users.service';
 import { Controller, Get, INestApplication, Logger, Module, UseGuards } from '@nestjs/common';
@@ -70,7 +71,7 @@ describe('Authentication and authorization HTTP', () => {
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] })
       .overrideModule(DatabaseModule).useModule(TestDatabaseModule)
-      .overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue(repository).compile();
+      .overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue(repository).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();

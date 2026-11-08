@@ -1,6 +1,6 @@
 # OnebodyMusic backend
 
-NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, and artist management are implemented. Other library modules remain deferred.
+NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management are implemented. Other library modules remain deferred.
 
 ## Install and start
 
@@ -95,11 +95,11 @@ The seven models are `User`, `Artist`, `Album`, `Song`, `Playlist`, `PlaylistSon
 
 - User email is unique. New users default to `MEMBER`/`PENDING`; playlists default to `PERSONAL`.
 - Referenced users, artists, songs, and rehearsal playlists have restrictive deletion policies.
-- Deleting an album sets optional song album links to null.
+- Albums containing songs cannot be deleted; explicitly unlink/reassign their songs first.
 - Deleting an unreferenced playlist cascades its join entries.
 - Unique `(playlistId, songId)` prevents duplicate songs; unique `(playlistId, position)` prevents order collisions.
 - Playlist positions are zero-based and nonnegative; optional duration cannot be negative. SQL migrations maintain these check constraints.
-- Rehearsals may share a playlist. Album/artist consistency and rehearsal playlist type need future service-level business validation; ordinary foreign keys do not enforce them.
+- Rehearsals may share a playlist. Album artist changes are blocked while songs exist. Future song-writing services must also validate album/artist consistency, and rehearsal services must validate playlist type; ordinary foreign keys do not enforce these business rules.
 
 Use a transaction and unused temporary positions when reordering playlists to avoid intermediate unique-position collisions. Email writers should normalize email consistently with the seed (trim and lowercase).
 
@@ -380,3 +380,76 @@ npm run test:artists:db
 ```
 
 The integration test starts the compiled API and checks role access, create/update/concurrent uniqueness, literal search, pagination, optional-field clearing, album/song counts, and safe deletion. It cleans up only uniquely named test fixtures.
+
+## Albums
+
+Album routes appear under **Albums** in Swagger. All reads require an ACTIVE authenticated account; writes require ADMIN. Controllers delegate business logic to `AlbumsService`.
+
+| Method and path | Access | Result |
+| --- | --- | --- |
+| `POST /api/v1/albums` | ADMIN | `201` album details with artist and an initially empty song array. |
+| `GET /api/v1/albums` | Authenticated | `200` paginated summaries with artist and song count. |
+| `GET /api/v1/albums/:id` | Authenticated | `200` album details with associated song metadata. |
+| `PATCH /api/v1/albums/:id` | ADMIN | `200` updated details. |
+| `DELETE /api/v1/albums/:id` | ADMIN | `204` without a body, only for an empty album. |
+
+Apply migration `003-album-constraints` before running the updated API:
+
+```sh
+npm run db:migrate
+npm run db:status
+npm run start:dev
+```
+
+This migration adds a case-insensitive normalized-title unique index scoped to `artistId`, an index for release-year filtering, and changes `Song.albumId` deletion behavior from `SET NULL` to `RESTRICT`. Populated albums can no longer be deleted by SQL or by the API without first explicitly unlinking/reassigning their songs. No songs or references are automatically changed by the migration. The initial migration remains immutable.
+
+Existing duplicate titles for the same artist cause migration failure without data modification. Identify them in pgAdmin with:
+
+```sql
+SELECT "artistId",
+       lower(btrim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) AS normalized_title,
+       array_agg(id) AS album_ids, count(*) AS occurrences
+FROM "Album"
+GROUP BY "artistId", lower(btrim(regexp_replace(title, '[[:space:]]+', ' ', 'g')))
+HAVING count(*) > 1;
+```
+
+Resolve conflicts explicitly while preserving songs, then retry. Reversing migration 003 removes its indexes and restores the legacy `SET NULL` foreign-key policy; use rollback only on disposable development databases.
+
+Example create body (replace the artist UUID with an existing artist):
+
+```json
+{
+  "title": "Songs of Praise",
+  "artistId": "6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "releaseYear": 2024,
+  "coverImageUrl": "https://images.example.org/albums/praise.jpg",
+  "coverImagePublicId": "onebodymusic/albums/praise"
+}
+```
+
+Title and artist UUID are required; release year is required on create as a JSON integer from 1–9999. Existing legacy rows with an unknown year remain readable as `null`. Titles are trimmed, repeated whitespace is collapsed, and the maximum length is 200. Case-insensitive title duplicates within the same artist return `409`, independent of release year; the same title for a different artist is allowed. Distinct editions by one artist should use distinct titles.
+
+Artwork references are optional. Cover URLs must be HTTPS without embedded credentials (maximum 2048 characters); public IDs must be strings of 1–255 characters. No file fetching, uploads, audio uploads, or media deletion is implemented. PATCH requires at least one recognized field. Omitted fields remain unchanged; artwork may be cleared with `null`, while title, artist ID, and release year may not be null.
+
+The service validates and locks the referenced artist before inserting/updating. Artist reassignment is allowed only on empty albums; populated albums return `409` to avoid leaving existing songs associated with a different artist. Same-artist edits remain allowed, including differently cased UUID spellings. Album changes and deletion use transactions and row locks; the restrictive foreign key protects against concurrent song creation during deletion.
+
+List example:
+
+```text
+/api/v1/albums?page=1&limit=20&artistId=<artist-uuid>&releaseYear=2024&search=praise
+```
+
+Filters combine with AND. Search is a case-insensitive literal title substring; SQL wildcard characters are escaped. Page defaults to 1 (1–1000000), and limit to 20 (1–100). Summaries are ordered by title then UUID and return `{ data, page, limit, total, totalPages }`. Listing by an existing-format but unknown artist UUID returns an empty page, not `404`.
+
+Single-album details and create/update responses include `songs`, ordered by title then UUID. Each song exposes only `id`, `title`, `artistId`, `category`, and `durationSeconds`; internal audio resource references and uploader information are not exposed. Summaries include `songCount`, and artist references contain `id` and `name`. Song arrays are loaded separately from the album query to avoid pagination/count inflation.
+
+Errors use the shared JSON format: `400` for invalid input, `401` for invalid/inactive authentication, `403` for unauthorized writes, `404` for a missing album or artist on writes, and `409` for duplicate titles, populated deletion/reassignment, or concurrent reference conflicts.
+
+Implementation and unit tests are in `src/albums/`. Run `npm test`, `npm run typecheck`, and `npm run build`. For real PostgreSQL checks, migrate a dedicated test database, set `TEST_DATABASE_URL` securely, and run:
+
+```sh
+npm run test:albums:db
+```
+
+The integration suite verifies authorization, existing artist validation, per-artist and concurrent uniqueness, combined filters/search/pagination, artwork updates, associated song details, populated deletion at API and database levels, and empty-album deletion. It removes only its uniquely named fixtures. Existing artist/database tests now verify restrictive album deletion rather than the superseded automatic unlinking policy.

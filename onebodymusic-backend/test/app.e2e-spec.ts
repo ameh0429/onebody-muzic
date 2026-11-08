@@ -1,3 +1,4 @@
+import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { UsersService } from '../src/users/users.service';
 import 'reflect-metadata';
@@ -55,7 +56,7 @@ describe('API foundation', () => {
     process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();

@@ -74,6 +74,7 @@ test('compiled Artists API with PostgreSQL uniqueness, counts and safe deletion'
       assert.equal((await call(`artists/${primaryId}`, 'DELETE', adminToken)).status, 409);
       const onlyAlbum = await Album.create({ title: 'Album Only', artistId: otherId });
       assert.equal((await call(`artists/${otherId}`, 'DELETE', adminToken)).status, 409); await onlyAlbum.destroy();
+      await Song.update({ albumId: null }, { where: { albumId: album.id } });
       await album.destroy(); assert.equal((await call(`artists/${primaryId}`, 'DELETE', adminToken)).status, 409);
       await Song.destroy({ where: { artistId: primaryId } });
       const deleted = await call(`artists/${primaryId}`, 'DELETE', adminToken); assert.equal(deleted.status, 204); assert.equal(await deleted.text(), '');

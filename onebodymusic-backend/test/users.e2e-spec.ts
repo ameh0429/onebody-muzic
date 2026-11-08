@@ -1,3 +1,4 @@
+import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { INestApplication, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -30,7 +31,7 @@ describe('User management authorization and DTOs', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
-      .overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue(service).compile();
+      .overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue(service).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();
     jwt = new JwtService({ secret: process.env.JWT_SECRET, signOptions: { algorithm: 'HS256', issuer: JWT_ISSUER, audience: JWT_AUDIENCE, expiresIn: 900 } });
   });
