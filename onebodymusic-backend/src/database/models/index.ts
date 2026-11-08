@@ -194,7 +194,7 @@ export class Song extends Model<InferAttributes<Song>, InferCreationAttributes<S
   @BelongsTo(() => Artist, { foreignKey: 'artistId', onDelete: 'RESTRICT', onUpdate: 'CASCADE' })
   declare artist: NonAttribute<Artist>;
 
-  @BelongsTo(() => Album, { foreignKey: 'albumId', onDelete: 'SET NULL', onUpdate: 'CASCADE' })
+  @BelongsTo(() => Album, { foreignKey: 'albumId', onDelete: 'RESTRICT', onUpdate: 'CASCADE' })
   declare album: NonAttribute<Album | null>;
 
   @BelongsTo(() => User, { foreignKey: 'uploadedById', onDelete: 'RESTRICT', onUpdate: 'CASCADE' })

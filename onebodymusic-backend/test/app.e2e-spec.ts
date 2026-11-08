@@ -1,3 +1,6 @@
+import { AlbumsService } from '../src/albums/albums.service';
+import { ArtistsService } from '../src/artists/artists.service';
+import { UsersService } from '../src/users/users.service';
 import 'reflect-metadata';
 import { Controller, Get, INestApplication, Module, Post, Body } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -5,6 +8,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import request from 'supertest';
+import { AuthRepository } from '../src/auth/auth.repository';
 import { DatabaseModule } from '../src/database/database.module';
 
 @Module({})
@@ -48,10 +52,11 @@ describe('API foundation', () => {
   let app: INestApplication;
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
+    process.env.JWT_SECRET = 'test-only-secret-at-least-32-characters';
     process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();

@@ -29,7 +29,7 @@ test('PostgreSQL schema, relations, safe serialization, and administrator seed',
     await db.authenticate();
     await t.test('connects and reports an applied, repeatable migration', async () => {
       const migrator = createMigrator(db);
-      assert.equal((await migrator.executed()).length, 1);
+      assert.deepEqual((await migrator.executed()).map((migration) => migration.name), ['001-initial-schema', '002-artist-name-uniqueness', '003-album-constraints']);
       assert.equal((await migrator.up()).length, 0);
     });
     const environment = { ADMIN_NAME: 'Integration Administrator', ADMIN_EMAIL: adminEmail, ADMIN_PASSWORD: password };
@@ -99,8 +99,10 @@ test('PostgreSQL schema, relations, safe serialization, and administrator seed',
       await assert.rejects(song.destroy(), ForeignKeyConstraintError);
       await assert.rejects(playlist.destroy(), ForeignKeyConstraintError);
     });
-    await t.test('sets deleted album links to null and cascades playlist entries', async () => {
+    await t.test('restricts populated album deletion and cascades playlist entries', async () => {
       assert.ok(album && song && rehearsal && playlist);
+      await assert.rejects(album.destroy(), ForeignKeyConstraintError);
+      await song.update({ albumId: null });
       await album.destroy(); album = undefined;
       await song.reload();
       assert.equal(song.albumId, null);
