@@ -9,10 +9,11 @@ import { UsersModule } from './users/users.module';
 import { ArtistsModule } from './artists/artists.module';
 import { AlbumsModule } from './albums/albums.module';
 import { MediaModule } from './media/media.module';
+import { SongsModule } from './songs/songs.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }), DatabaseModule, AuthModule, UsersModule, ArtistsModule, AlbumsModule, MediaModule, HealthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }), DatabaseModule, AuthModule, UsersModule, ArtistsModule, AlbumsModule, MediaModule, SongsModule, HealthModule],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
 export class AppModule {}

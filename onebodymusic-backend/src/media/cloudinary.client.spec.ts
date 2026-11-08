@@ -38,6 +38,11 @@ describe('Cloudinary authenticated-delivery boundary', () => {
     expect(destroy).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({ resource_type: 'video', type: 'authenticated', invalidate: true }));
     await expect(provider.destroy(asset)).rejects.toThrow('not confirmed');
   });
+  it('signs authenticated provider URLs only for internal gateway use', () => {
+    const asset = audioAsset(); jest.mocked(cloudinary.url).mockReturnValue('https://res.cloudinary.com/test/video/authenticated/internal.mp3');
+    expect(new CloudinaryClient(config).internalAudioUrl(asset)).toContain('/video/authenticated/');
+    expect(cloudinary.url).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({ type: 'authenticated', resource_type: 'video', secure: true, sign_url: true, auth_token: false }));
+  });
   it('refuses storage keys outside the server-owned namespace', async () => {
     const asset = audioAsset(); asset.publicId = 'someone-elses-file';
     await expect(new CloudinaryClient(config).destroy(asset)).rejects.toThrow('Invalid media storage record'); expect(destroy).not.toHaveBeenCalled();

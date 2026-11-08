@@ -1,4 +1,5 @@
 import { BadGatewayException, ConflictException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
 import { MediaAsset, MediaKind, MediaStatus } from '../database/models';
 import { CloudinaryClient } from './cloudinary.client';
@@ -98,6 +99,8 @@ export class MediaService {
     }, skipLocked);
     return confirmed === true;
   }
+
+  scheduleUnreferenced(id: string, transaction: Transaction): Promise<void> { return this.repository.scheduleUnreferenced(id, transaction); }
 
   private response(asset: MediaAsset): MediaResponseDto {
     return { id: asset.id, kind: asset.kind, status: asset.status, folder: asset.folder, publicId: asset.publicId, resourceType: asset.resourceType, deliveryType: asset.deliveryType, format: asset.format, mimeType: asset.mimeType, bytes: asset.bytes, duration: asset.duration, width: asset.width, height: asset.height, url: this.cloudinary.imageUrl(asset), createdAt: asset.createdAt.toISOString() };

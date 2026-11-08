@@ -22,6 +22,10 @@ export class MediaRepository {
     if (await this.albums.count({ ...options, where: { coverImagePublicId: asset.publicId } }) > 0) return true;
     return await this.songs.count({ ...options, where: { coverImagePublicId: asset.publicId } }) > 0;
   }
+  async scheduleUnreferenced(id: string, transaction: Transaction): Promise<void> {
+    const asset = await this.assets.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (asset?.status === MediaStatus.READY && !await this.referenced(asset, transaction)) await asset.update({ status: MediaStatus.CLEANUP_PENDING }, { transaction });
+  }
   async candidates(staleSeconds: number): Promise<string[]> {
     const cutoff = new Date(Date.now() - staleSeconds * 1000);
     const retry = new Date(Date.now() - 60000);

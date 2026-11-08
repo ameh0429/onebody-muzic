@@ -3,6 +3,7 @@ import { SequelizeStorage, Umzug } from 'umzug';
 import { up as artistNamesUp, down as artistNamesDown } from './migrations/002-artist-name-uniqueness';
 import { up as albumsUp, down as albumsDown } from './migrations/003-album-constraints';
 import { up as mediaUp, down as mediaDown } from './migrations/004-media-assets';
+import { up as songsUp, down as songsDown } from './migrations/005-song-media-assets';
 import { up, down } from './migrations/001-initial-schema';
 
 export function createMigrator(database: Sequelize): Umzug<Sequelize> {
@@ -24,6 +25,10 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       name: '004-media-assets',
       up: ({ context }) => mediaUp(context),
       down: ({ context }) => mediaDown(context),
+    }, {
+      name: '005-song-media-assets',
+      up: ({ context }) => songsUp(context),
+      down: ({ context }) => songsDown(context),
     }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,

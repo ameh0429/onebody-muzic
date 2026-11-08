@@ -53,6 +53,12 @@ export class CloudinaryClient {
     const response: unknown = await cloudinary.uploader.destroy(asset.publicId, { ...options, invalidate: true });
     if (typeof response !== 'object' || response === null || !('result' in response) || !['ok', 'not found'].includes(String(response.result))) throw new Error('Cloudinary removal not confirmed');
   }
+  // Non-expiring provider signatures stay inside the server; browser tickets enforce expiry at the gateway.
+  internalAudioUrl(asset: MediaAsset): string {
+    const options = this.options(asset);
+    if (asset.kind !== MediaKind.AUDIO) throw new ServiceUnavailableException('Audio media is required');
+    return cloudinary.url(asset.publicId, { cloud_name: options.cloud_name, api_secret: options.api_secret, resource_type: 'video', type: 'authenticated', format: asset.format, secure: true, sign_url: true, long_url_signature: true, auth_token: false });
+  }
   imageUrl(asset: MediaAsset): string | null {
     if (asset.kind !== MediaKind.IMAGE) return null;
     return cloudinary.url(asset.publicId, { cloud_name: this.config.get('CLOUDINARY_CLOUD_NAME', { infer: true }), resource_type: 'image', type: 'upload', secure: true, version: undefined, format: asset.format });

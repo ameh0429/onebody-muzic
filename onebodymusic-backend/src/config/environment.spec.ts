@@ -32,6 +32,9 @@ describe('startup configuration validation', () => {
   it.each([{ MEDIA_AUDIO_MAX_BYTES: '0' }, { MEDIA_IMAGE_MAX_BYTES: '999999999' }, { MEDIA_MAX_CONCURRENT_UPLOADS: '0' }, { MEDIA_STALE_UPLOAD_SECONDS: '30' }])('rejects invalid media bounds %j', (values) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', ...values })).toThrow('MEDIA_');
   });
+  it.each(['0', '14', '301', 'x'])('rejects unsafe playback TTL %s', (MEDIA_PLAYBACK_TTL_SECONDS) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', MEDIA_PLAYBACK_TTL_SECONDS })).toThrow('MEDIA_PLAYBACK_TTL_SECONDS');
+  });
   it('rejects invalid runtime modes', () => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', NODE_ENV: 'invalid' })).toThrow('NODE_ENV');
   });

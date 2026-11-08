@@ -185,6 +185,16 @@ export class Song extends Model<InferAttributes<Song>, InferCreationAttributes<S
   @Column(DataType.UUID)
   declare uploadedById: string;
 
+  @ForeignKey(() => MediaAsset)
+  @AllowNull(true)
+  @Column(DataType.UUID)
+  declare audioAssetId: string | null;
+
+  @ForeignKey(() => MediaAsset)
+  @AllowNull(true)
+  @Column(DataType.UUID)
+  declare coverAssetId: string | null;
+
   @Column(DataType.DATE(3))
   declare createdAt: CreationOptional<Date>;
 

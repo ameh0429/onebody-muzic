@@ -2,6 +2,18 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  @Max(300)
+  MEDIA_PLAYBACK_TTL_SECONDS: number = 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(120)
+  MEDIA_PLAYBACK_IDLE_TIMEOUT_SECONDS: number = 30;
+
   @IsIn(['true', 'false'])
   MEDIA_ENABLED: string = 'false';
 
