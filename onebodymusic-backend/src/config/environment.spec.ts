@@ -1,6 +1,6 @@
 import { validateEnvironment as validate } from './environment';
 
-const validateEnvironment = (config: Record<string, unknown>) => validate({ DATABASE_URL: 'postgresql://localhost/onebodymusic', ...config });
+const validateEnvironment = (config: Record<string, unknown>) => validate({ DATABASE_URL: 'postgresql://localhost/onebodymusic', JWT_SECRET: 'test-only-secret-at-least-32-characters', ...config });
 
 describe('startup configuration validation', () => {
   it('parses explicit origins and applies documented defaults', () => {
@@ -16,6 +16,12 @@ describe('startup configuration validation', () => {
   });
   it.each([undefined, '', 'mysql://localhost/db', 'postgresql://'])('rejects invalid database URL %s', (url) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', DATABASE_URL: url })).toThrow('DATABASE_URL');
+  });
+  it.each([undefined, '', 'short', ' '.repeat(40)])('rejects invalid JWT secret', (JWT_SECRET) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', JWT_SECRET })).toThrow('JWT_SECRET');
+  });
+  it.each(['0', '59', '3601', 'abc', '1.5'])('rejects invalid JWT lifetime %s', (JWT_ACCESS_TOKEN_TTL_SECONDS) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', JWT_ACCESS_TOKEN_TTL_SECONDS })).toThrow('JWT_ACCESS_TOKEN_TTL_SECONDS');
   });
   it('rejects invalid runtime modes', () => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', NODE_ENV: 'invalid' })).toThrow('NODE_ENV');

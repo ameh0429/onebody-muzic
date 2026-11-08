@@ -1,6 +1,6 @@
 # OnebodyMusic backend
 
-NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Authentication and business CRUD endpoints are not implemented yet.
+NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, and role guards are implemented. Business CRUD endpoints remain outside this task.
 
 ## Install and start
 
@@ -12,7 +12,7 @@ npm ci
 cp .env.example .env
 ```
 
-Preserve an existing `.env`. On Windows PowerShell use `Copy-Item .env.example .env`. Set `POSTGRES_PASSWORD` to your own local password, and set matching URL-encoded credentials in `DATABASE_URL`. Then start the provided local database (Docker Compose required), migrate, and start the API:
+Preserve an existing `.env`. On Windows PowerShell use `Copy-Item .env.example .env`. Set `POSTGRES_PASSWORD` to your own local password, set matching URL-encoded credentials in `DATABASE_URL`, and configure a strong random `JWT_SECRET` (at least 32 characters). Then start the provided local database (Docker Compose required), migrate, and start the API:
 
 ```sh
 docker compose up -d --wait
@@ -41,6 +41,8 @@ Environment variables override `.env`; `.env` is untracked.
 | --- | --- |
 | `DATABASE_URL` | Required PostgreSQL connection URL; URL-encode special characters in credentials. |
 | `CORS_ALLOWED_ORIGINS` | Required comma-separated exact HTTP(S) origins. No wildcards, paths, or trailing slashes. |
+| `JWT_SECRET` | Required random signing secret, at least 32 characters; no default. |
+| `JWT_ACCESS_TOKEN_TTL_SECONDS` | Integer 60–3600; default 900 (15 minutes). |
 | `PORT` | Integer 1–65535, default `3000`. |
 | `NODE_ENV` | `development`, `test`, or `production`; default `development`. |
 | `POSTGRES_PASSWORD` | Password for the optional Compose database; match it in `DATABASE_URL`. |
@@ -53,7 +55,7 @@ CORS controls browser access, not authentication. Unapproved browser origins rec
 
 ## Swagger and health
 
-Open `http://localhost:3000/api/docs`. Expand **Health → GET /api/v1/health**, choose **Try it out**, then **Execute**. The OpenAPI JSON is at `/api/docs-json`. **Authorize** supports bearer JWT tokens for future protected endpoints; health remains public, and this task implements no authentication.
+Open `http://localhost:3000/api/docs`. Expand **Health → GET /api/v1/health**, choose **Try it out**, then **Execute**. The OpenAPI JSON is at `/api/docs-json`. **Authorize** accepts the `accessToken` returned by login. Paste the token without the `Bearer` prefix; Swagger adds it automatically. Health remains public.
 
 ```sh
 curl http://localhost:3000/api/v1/health
@@ -69,7 +71,7 @@ Example `200 OK`:
 }
 ```
 
-Health is a process liveness check, not an ongoing database readiness probe. Nest's Sequelize integration authenticates before HTTP startup and closes its connection pool during application shutdown. The API fails startup if the database cannot be reached. Shutdown hooks handle termination signals.
+Health is a process liveness check, not an ongoing database readiness probe. Nest's Sequelize integration authenticates before HTTP startup and closes its connection pool during application shutdown. The API fails startup if the database cannot be reached or required JWT settings are invalid. Shutdown hooks handle termination signals.
 
 Global validation transforms request DTOs, permits declared fields only, and rejects extra fields. Health accepts no request body, so no unused request DTO is introduced. Test-only routes verify shared validation behavior.
 
@@ -123,7 +125,7 @@ npm run db:seed:prod
 
 No administrator credentials are supplied. Passwords must be 16–128 characters and are hashed with Argon2id (19 MiB memory, two iterations, one lane). The seed normalizes email and creates an `ACTIVE` `ADMIN` once. Repeated or concurrent runs preserve existing credentials. An existing member, pending, or suspended account causes failure without promotion, reactivation, or password reset. Seed output contains no credentials or hashes. Remove seed credentials from the runtime environment afterward; rotation is a separate explicit operation.
 
-`User` excludes `passwordHash` from default queries, and its JSON serialization redacts the hash even on freshly created or unscoped instances. Explicit unscoped/raw queries can still retrieve it for future authentication logic; never return such data directly in HTTP responses. Use explicit response DTOs for future user endpoints.
+`User` excludes `passwordHash` from default queries, and its JSON serialization redacts the hash even on freshly created or unscoped instances. Explicit unscoped/raw queries can still retrieve it for credential verification; never return such data directly in HTTP responses. Use explicit response DTOs for user endpoints.
 
 ## Validation
 
@@ -169,11 +171,98 @@ src/
     health.controller.ts
     health.service.ts
     dto/health-response.dto.ts
+  auth/
+    auth.module.ts
+    auth.controller.ts
+    auth.service.ts
+    auth.repository.ts
+    dto/
+    strategies/jwt.strategy.ts
+    guards/
+    decorators/
+    validators/passwords-match.validator.ts
 test/
   app.e2e-spec.ts
   database.integration.ts
+  auth.e2e-spec.ts
+  auth.database.integration.ts
 compose.yaml
 .env.example
 ```
 
-Runtime dependencies include NestJS core/config/platform/Swagger, `@nestjs/sequelize`, `sequelize`, `sequelize-typescript`, `pg`, `pg-hstore`, `umzug`, `argon2`, `dotenv`, Helmet, class-validator/transformer, reflect-metadata, and RxJS. Development tooling includes Nest CLI/testing, TypeScript, Jest/ts-jest, Supertest, and tsx. Exact versions are recorded in `package-lock.json`.
+Runtime dependencies include NestJS core/config/platform/Swagger, `@nestjs/sequelize`, `@nestjs/passport`, `@nestjs/jwt`, `passport`, `passport-jwt`, `sequelize`, `sequelize-typescript`, `pg`, `pg-hstore`, `umzug`, `argon2`, `dotenv`, Helmet, class-validator/transformer, reflect-metadata, and RxJS. Development tooling includes Nest CLI/testing, TypeScript, Jest/ts-jest, Supertest, and tsx. Exact versions are recorded in `package-lock.json`.
+
+
+## Authentication and role authorization
+
+Configure `JWT_SECRET` securely in the untracked `.env` or process environment before API startup. Generate a cryptographically random value locally, for example with Node's `crypto.randomBytes(48).toString('hex')`. Do not reuse example values or commit signing keys. `JWT_ACCESS_TOKEN_TTL_SECONDS` defaults to 900 seconds and must be 60–3600. Changing the secret invalidates existing tokens; changing the lifetime applies to newly issued tokens.
+
+| Endpoint | Access | Result |
+| --- | --- | --- |
+| `POST /api/v1/auth/register` | Public | `201` sanitized MEMBER/PENDING profile; no token. |
+| `POST /api/v1/auth/login` | Public, valid ACTIVE account | `200` access token, token type, lifetime, sanitized profile. |
+| `GET /api/v1/auth/me` | Bearer JWT, current ACTIVE account | `200` current sanitized profile. |
+
+Registration body:
+
+```json
+{
+  "name": "Grace James",
+  "email": "grace@example.org",
+  "password": "A-long-example-passphrase!",
+  "confirmPassword": "A-long-example-passphrase!"
+}
+```
+
+Names are trimmed and must be 2–200 characters; email addresses are trimmed, lowercased, and validated (maximum 254 characters). Passwords must be 12–128 characters and contain a non-whitespace character; confirmation must match exactly. Passwords are never trimmed. Role, status, and other unknown request fields are rejected with `400`; duplicate email returns `409`, including concurrent requests. Passwords use Argon2id (19 MiB memory, two iterations, one lane). Registration does not allow immediate login: activation/approval endpoints are outside this task. Use the existing seeded ACTIVE administrator when testing login before member approval is implemented.
+
+Login body:
+
+```json
+{
+  "email": "grace@example.org",
+  "password": "A-long-example-passphrase!"
+}
+```
+
+Example successful response (requires an ACTIVE account):
+
+```json
+{
+  "accessToken": "<signed-access-token>",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "user": {
+    "id": "6838918a-2b67-49ed-a90d-14b86ca955c7",
+    "name": "Grace James",
+    "email": "grace@example.org",
+    "role": "MEMBER",
+    "status": "ACTIVE",
+    "createdAt": "2026-11-08T12:00:00.000Z",
+    "updatedAt": "2026-11-08T12:00:00.000Z"
+  }
+}
+```
+
+Unknown email, wrong password, PENDING, and SUSPENDED accounts return the same `401` message: `Invalid email or password`. Invalid request formats return `400`. Tokens use HS256 with fixed issuer/audience validation and contain only `sub` (user UUID) plus standard `iat`, `exp`, `iss`, and `aud` claims. Roles, email addresses, passwords, and hashes are not token claims. Missing, malformed, forged, or expired tokens receive `401`. Tokens are accepted only from the Authorization bearer header, never URL parameters.
+
+Every protected request reads the current user from PostgreSQL. Deleted or non-ACTIVE accounts receive `401` even with an unexpired token; role changes take effect on the next request. All auth responses use explicit safe DTOs and `Cache-Control: no-store`. Unexpected exception details are not logged, preventing database error messages from leaking credential material.
+
+For role-restricted endpoints in future feature modules, import `AuthModule`, then apply both guards in this order:
+
+```ts
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
+```
+
+`@Roles(Role.ADMIN, Role.MEMBER)` allows either role. Method roles override controller roles. `RolesGuard` denies authenticated users with a nonmatching current role with `403`. Use `@CurrentUser() user: UserResponseDto` to receive the sanitized, database-validated user. `@Roles()` is metadata; it requires the guards. No administrative or business test routes are shipped in the application.
+
+Swagger provides request/response schemas, examples, and failure codes under **Authentication**. Log in with an ACTIVE account, copy `accessToken`, click **Authorize**, paste it without a prefix, and execute **GET /api/v1/auth/me**. Swagger does not persist authorization across page reloads. There are no refresh-token, logout, activation, or password-reset endpoints in this task; access tokens expire after their configured short lifetime.
+
+Authentication HTTP/guard tests run with `npm test`. They exercise real Argon2 and JWT/Passport behavior with a repository test double. For real persistence checks, migrate a dedicated database, set `TEST_DATABASE_URL` securely, and run:
+
+```sh
+npm run test:auth:db
+```
+
+This command builds and starts a temporary compiled API against the test database, verifies persisted hashing, normalized email races, login, current profile, suspension and deletion revocation, then removes only uniquely named fixtures and stops its server. Never use a production database. Existing `npm run test:db` checks remain available. No schema migration is needed for authentication because the User fields already exist.

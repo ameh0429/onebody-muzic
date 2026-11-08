@@ -22,7 +22,7 @@ export class HttpExceptionFilter implements ExceptionFilter<unknown> {
         else if (Array.isArray(detail) && detail.every((item: unknown) => typeof item === 'string')) message = detail as string[];
       }
     }
-    if (status >= 500) this.logger.error(exception instanceof Error ? exception.stack : 'Unknown server error');
+    if (status >= 500) this.logger.error(`Unhandled server error (${status})`);
     const body: ApiErrorDto = {
       statusCode: status,
       error: STATUS_CODES[status] ?? 'Error',

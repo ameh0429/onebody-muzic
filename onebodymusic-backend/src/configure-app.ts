@@ -13,9 +13,9 @@ export function configureApp(app: INestApplication): void {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   const options = new DocumentBuilder()
     .setTitle('OnebodyMusic API')
-    .setDescription('REST API for the private OnebodyMusic church music library and rehearsal management platform. This initial version provides API liveness; authentication and database integration follow in later tasks.')
+    .setDescription('REST API for the private OnebodyMusic church music library and rehearsal management platform. Provides PostgreSQL-backed member registration, active-account JWT authentication, and API liveness.')
     .setVersion('1.0.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'JWT access token for future protected endpoints.' })
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Paste accessToken from POST /api/v1/auth/login. Do not include the Bearer prefix.' })
     .build();
   const document = SwaggerModule.createDocument(app, options);
   SwaggerModule.setup('api/docs', app, document, {

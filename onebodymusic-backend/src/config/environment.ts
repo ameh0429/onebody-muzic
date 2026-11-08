@@ -1,7 +1,18 @@
 import { plainToInstance, Transform, Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, Matches, Max, Min, validateSync } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @IsString()
+  @MinLength(32)
+  @Matches(/\S/, { message: 'JWT_SECRET must not be blank' })
+  JWT_SECRET!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(60)
+  @Max(3600)
+  JWT_ACCESS_TOKEN_TTL_SECONDS: number = 900;
+
   @IsString()
   @IsNotEmpty()
   @Matches(/^postgres(ql)?:\/\/[^\s]+$/, { message: 'DATABASE_URL must be a PostgreSQL connection URL' })
