@@ -318,4 +318,66 @@ export class Rehearsal extends Model<InferAttributes<Rehearsal>, InferCreationAt
   declare createdBy: NonAttribute<User>;
 }
 
-export const DATABASE_MODELS = [User, Artist, Album, Song, Playlist, PlaylistSong, Rehearsal];
+export enum MediaKind { AUDIO = 'AUDIO', IMAGE = 'IMAGE' }
+export enum MediaStatus { UPLOADING = 'UPLOADING', READY = 'READY', CLEANUP_PENDING = 'CLEANUP_PENDING', DELETED = 'DELETED' }
+
+@Table({ tableName: 'MediaAsset', timestamps: true, indexes: [
+  { name: 'MediaAsset_publicId_key', fields: ['publicId'], unique: true },
+  { name: 'MediaAsset_status_updatedAt_idx', fields: ['status', 'updatedAt'] },
+  { name: 'MediaAsset_uploadedById_idx', fields: ['uploadedById'] },
+] })
+export class MediaAsset extends Model<InferAttributes<MediaAsset>, InferCreationAttributes<MediaAsset>> {
+  @PrimaryKey
+  @Default(literal('gen_random_uuid()'))
+  @Column(DataType.UUID)
+  declare id: CreationOptional<string>;
+  @AllowNull(false)
+  @Column(DataType.ENUM(...Object.values(MediaKind)))
+  declare kind: MediaKind;
+  @AllowNull(false)
+  @Default(MediaStatus.UPLOADING)
+  @Column(DataType.ENUM(...Object.values(MediaStatus)))
+  declare status: CreationOptional<MediaStatus>;
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare folder: string;
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare publicId: string;
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare resourceType: 'video' | 'image';
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare deliveryType: 'authenticated' | 'upload';
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare format: string;
+  @AllowNull(false)
+  @Column(DataType.TEXT)
+  declare mimeType: string;
+  @AllowNull(false)
+  @Column(DataType.INTEGER)
+  declare bytes: number;
+  @AllowNull(true)
+  @Column(DataType.DOUBLE)
+  declare duration: number | null;
+  @AllowNull(true)
+  @Column(DataType.INTEGER)
+  declare width: number | null;
+  @AllowNull(true)
+  @Column(DataType.INTEGER)
+  declare height: number | null;
+  @ForeignKey(() => User)
+  @AllowNull(false)
+  @Column(DataType.UUID)
+  declare uploadedById: string;
+  @Column(DataType.DATE(3))
+  declare createdAt: CreationOptional<Date>;
+  @Column(DataType.DATE(3))
+  declare updatedAt: CreationOptional<Date>;
+  @BelongsTo(() => User, { foreignKey: 'uploadedById', onDelete: 'RESTRICT' })
+  declare uploadedBy: NonAttribute<User>;
+}
+
+export const DATABASE_MODELS = [User, Artist, Album, Song, Playlist, PlaylistSong, Rehearsal, MediaAsset];

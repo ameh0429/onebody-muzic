@@ -1,7 +1,53 @@
 import { plainToInstance, Transform, Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @IsIn(['true', 'false'])
+  MEDIA_ENABLED: string = 'false';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-zA-Z0-9_-]+$/)
+  CLOUDINARY_CLOUD_NAME?: string;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_API_SECRET?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1024)
+  @Max(104857600)
+  MEDIA_AUDIO_MAX_BYTES: number = 26214400;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1024)
+  @Max(20971520)
+  MEDIA_IMAGE_MAX_BYTES: number = 5242880;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  MEDIA_MAX_CONCURRENT_UPLOADS: number = 2;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  @Max(3600)
+  MEDIA_CLEANUP_INTERVAL_SECONDS: number = 60;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(600)
+  @Max(86400)
+  MEDIA_STALE_UPLOAD_SECONDS: number = 900;
+
   @IsString()
   @MinLength(32)
   @Matches(/\S/, { message: 'JWT_SECRET must not be blank' })
@@ -48,8 +94,10 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
     if (typeof origin !== 'string' || origin.includes('*')) return true;
     try { return new URL(origin).origin !== origin; } catch { return true; }
   });
-  if (errors.length > 0 || invalidOrigins) {
-    const fields = [...new Set([...errors.map((error) => error.property), ...(invalidOrigins ? ['CORS_ALLOWED_ORIGINS'] : [])])];
+  const missingMedia = validated.MEDIA_ENABLED === 'true'
+    ? ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'].filter((key) => typeof config[key] !== 'string' || !(config[key] as string).trim()) : [];
+  if (errors.length > 0 || invalidOrigins || missingMedia.length > 0) {
+    const fields = [...new Set([...errors.map((error) => error.property), ...missingMedia, ...(invalidOrigins ? ['CORS_ALLOWED_ORIGINS'] : [])])];
     throw new Error(`Invalid environment configuration: ${fields.join(', ')}`);
   }
   return validated;

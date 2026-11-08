@@ -1,3 +1,4 @@
+import { MediaModule } from '../src/media/media.module';
 import { INestApplication, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -25,7 +26,7 @@ describe('Album authorization, validation, and documentation', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = randomBytes(48).toString('hex'); process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = '900'; process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173'; process.env.DATABASE_URL = 'postgresql://localhost/test';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue(albums).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();

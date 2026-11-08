@@ -1,3 +1,4 @@
+import { MediaModule } from '../src/media/media.module';
 import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { INestApplication, Module } from '@nestjs/common';
@@ -29,7 +30,7 @@ describe('User management authorization and DTOs', () => {
     process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = '900';
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+      .overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue(service).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();

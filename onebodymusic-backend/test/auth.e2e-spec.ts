@@ -1,3 +1,4 @@
+import { MediaModule } from '../src/media/media.module';
 import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { UsersService } from '../src/users/users.service';
@@ -70,7 +71,7 @@ describe('Authentication and authorization HTTP', () => {
     passwordHash = await hash(password, { type: argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] })
-      .overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+      .overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue(repository).compile();
     app = module.createNestApplication();
     configureApp(app);

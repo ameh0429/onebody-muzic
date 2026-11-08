@@ -1,6 +1,6 @@
 # OnebodyMusic backend
 
-NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management are implemented. Other library modules remain deferred.
+NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management, and secure media uploads are implemented. Other library modules remain deferred.
 
 ## Install and start
 
@@ -47,6 +47,8 @@ Environment variables override `.env`; `.env` is untracked.
 | `NODE_ENV` | `development`, `test`, or `production`; default `development`. |
 | `POSTGRES_PASSWORD` | Password for the optional Compose database; match it in `DATABASE_URL`. |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Required only for the explicit initial administrator seed. |
+| `MEDIA_ENABLED` | `false` by default; enable after configuring server-side Cloudinary credentials. |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Required only when media is enabled; never commit real values. |
 | `TEST_DATABASE_URL` | Dedicated, migrated PostgreSQL database for integration tests. |
 
 For a remote database, use its required TLS configuration (for example, the provider's verified `sslmode=verify-full` connection URL and trusted CA). Never disable certificate validation. No production secrets or administrator credentials are included in this repository.
@@ -91,7 +93,7 @@ Validation errors return `400` and a string array in `message`. Unexpected error
 
 ## Models and migrations
 
-The seven models are `User`, `Artist`, `Album`, `Song`, `Playlist`, `PlaylistSong`, and `Rehearsal`. Models use UUID primary and foreign keys, timestamp columns, explicit association aliases, and indexes for foreign keys and common filters. PostgreSQL generates UUID defaults; Sequelize manages `updatedAt` for ORM writes. Direct SQL writers must supply/update timestamps themselves.
+The application models are `User`, `Artist`, `Album`, `Song`, `Playlist`, `PlaylistSong`, `Rehearsal`, and `MediaAsset`. Models use UUID primary and foreign keys, timestamp columns, explicit association aliases, and indexes for foreign keys and common filters. PostgreSQL generates UUID defaults; Sequelize manages `updatedAt` for ORM writes. Direct SQL writers must supply/update timestamps themselves.
 
 - User email is unique. New users default to `MEMBER`/`PENDING`; playlists default to `PERSONAL`.
 - Referenced users, artists, songs, and rehearsal playlists have restrictive deletion policies.
@@ -453,3 +455,129 @@ npm run test:albums:db
 ```
 
 The integration suite verifies authorization, existing artist validation, per-artist and concurrent uniqueness, combined filters/search/pagination, artwork updates, associated song details, populated deletion at API and database levels, and empty-album deletion. It removes only its uniquely named fixtures. Existing artist/database tests now verify restrictive album deletion rather than the superseded automatic unlinking policy.
+
+## Secure media uploads (Cloudinary)
+
+The **Media** Swagger tag contains the multipart endpoints. All three require an ACTIVE ADMIN; members cannot upload or delete assets. This project uses Sequelize, so media tracking is installed through Sequelize migration `004-media-assets`, not Prisma.
+
+### Configure and run
+
+In the untracked `.env` or a secure server-side runtime environment, supply your own Cloudinary product-environment credentials and explicitly enable media:
+
+```env
+MEDIA_ENABLED=true
+CLOUDINARY_CLOUD_NAME=<your-cloud-name>
+CLOUDINARY_API_KEY=<your-api-key>
+CLOUDINARY_API_SECRET=<your-api-secret>
+MEDIA_AUDIO_MAX_BYTES=26214400
+MEDIA_IMAGE_MAX_BYTES=5242880
+MEDIA_MAX_CONCURRENT_UPLOADS=2
+MEDIA_CLEANUP_INTERVAL_SECONDS=60
+MEDIA_STALE_UPLOAD_SECONDS=900
+```
+
+The angle-bracket values are placeholders. Never commit credentials or put them in frontend code. The SDK needs the real server-side secret for cryptographic signing; an outbound HTTP proxy's credential placeholder cannot substitute for that signing value. No Cloudinary credentials, upload signatures, or raw SDK responses are returned by the API or logged.
+
+Media is disabled by default so the existing application can start without Cloudinary. When enabled, all three credential settings are required at startup. Disabled uploads return `503` before buffering files. The cleanup scheduler is also disabled while media is disabled; restore configuration and enable it to resume pending cleanup.
+
+```sh
+npm ci
+npm run db:migrate
+npm run start:dev
+```
+
+Defaults are 25 MiB for audio, 5 MiB for images, and two concurrent buffered uploads per API process. Audio limits can be configured from 1 KiB to 100 MiB, images from 1 KiB to 20 MiB, and concurrency from 1–8. Cloudinary's account limits may be lower. Multer enforces limits during parsing; the service checks buffer size again. Upload concurrency is bounded before multipart buffering. Size/concurrency changes must fit the deployment's memory budget, especially across multiple processes.
+
+The Cloudinary SDK uses the inherited HTTPS proxy through a verified proxy agent when configured; TLS verification stays enabled. In managed cloud environments allow outbound HTTPS to `api.cloudinary.com`. The current environment draft also requests `cloudinary.com` for official documentation. Draft changes require review/save and publication to activate in a reusable environment. Local development uses your local network policy.
+
+### Endpoints and Swagger
+
+| Method and path | Multipart/body | Result |
+| --- | --- | --- |
+| `POST /api/v1/media/audio` | Exactly one `file`: MP3 or audio-only M4A. No other fields. | `201` authenticated audio metadata. |
+| `POST /api/v1/media/images` | One `file`: JPEG/PNG/WebP; `folder`: `artists`, `albums`, or `songs`. | `201` public-image metadata. |
+| `DELETE /api/v1/media/:id` | Internal MediaAsset UUID, not a Cloudinary ID or path. | `204` on confirmed deletion or an existing deleted tombstone. |
+
+Log in through Swagger, click **Authorize**, paste `accessToken` without a prefix, open the upload operation, and click **Try it out**. The `file` property is a real file picker. Choose an image destination from the enum dropdown. Let Swagger/browser set the multipart boundary; do not manually set `Content-Type` when using FormData.
+
+Accepted declared audio MIME types: `audio/mpeg`/`audio/mp3` for `.mp3`, and `audio/mp4`/`audio/x-m4a`/`audio/m4a` for `.m4a`. Accepted image MIME types are `image/jpeg`, `image/png`, and `image/webp`, matching `.jpg`/`.jpeg`, `.png`, and `.webp` respectively. Generic octet-stream, SVG, GIF, MP4 video, unsupported extensions, and mismatched declarations are rejected.
+
+Validation checks magic bytes as well as declared MIME and extension. MP3 requires two complete Layer III frames after an optional bounded ID3 header; audio-only M4A validates MP4 boxes and audio handler tracks while rejecting video tracks. Image signatures are checked locally and Cloudinary must successfully ingest the allowed format before READY status is saved. These practical signature/container checks do not replace antivirus or full local codec decoding. Filenames must start with a letter or digit, contain only letters/digits/spaces/dots/underscores/parentheses/hyphens, be at most 180 characters, and contain no `..`, path separators, or control characters. The original filename is never used as a storage key or persisted.
+
+Storage uses server-generated UUIDs in exactly these namespaces:
+
+```text
+onebodymusic/audio/<uuid>
+onebodymusic/artists/<uuid>
+onebodymusic/albums/<uuid>
+onebodymusic/songs/<uuid>
+```
+
+The SDK supplies the fixed folder and UUID, with client filenames ignored and overwriting disabled. Callers cannot choose folders beyond the image enum, public IDs, delivery types, resource types, or upload presets.
+
+Successful metadata contains `id`, `kind`, `status`, `folder`, `publicId`, `resourceType`, `deliveryType`, `format`, `mimeType`, `bytes`, `duration`, `width`, `height`, `url`, and `createdAt`. Unavailable dimensions/duration are null. For example, audio returns:
+
+```json
+{
+  "id": "6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "kind": "AUDIO",
+  "status": "READY",
+  "folder": "onebodymusic/audio",
+  "publicId": "onebodymusic/audio/6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "resourceType": "video",
+  "deliveryType": "authenticated",
+  "format": "mp3",
+  "mimeType": "audio/mpeg",
+  "bytes": 1048576,
+  "duration": 240,
+  "width": null,
+  "height": null,
+  "url": null,
+  "createdAt": "2026-11-08T12:00:00.000Z"
+}
+```
+
+### Audio privacy and delivery restrictions
+
+Audio uses Cloudinary's `resource_type: video` (also used for audio files) and **`type: authenticated`**. Authenticated delivery protects originals and derived assets; ordinary upload URLs or the mere use of HTTPS are not private. The service verifies the returned delivery/resource type before accepting the upload and never returns the SDK's raw `secure_url`, signature, or a signed audio URL. Images intentionally use public `upload` delivery and may be viewed by anyone with their URL.
+
+This step does **not** add member playback/download endpoints. A OnebodyMusic JWT is not a Cloudinary CDN credential. Future playback must authorize the current ACTIVE member and use Cloudinary's supported expiring delivery/download mechanism or an authorized backend gateway. A basic signed transformation URL is shareable and does not automatically expire; token-based CDN authentication can require account/CDN features. Do not convert the audio asset or derived copies to public delivery, and do not treat a hidden public URL as access control. Membership suspension cannot revoke bytes already downloaded or an independently valid CDN URL; playback design needs short lifetimes or gateway enforcement.
+
+Before production use, verify that your Cloudinary product environment/plan supports authenticated video/audio delivery and the selected audio formats. Confirm that an unsigned request to a test authenticated original and derived asset is denied, and that the intended authorized delivery flow succeeds. Live account/CDN behavior cannot be established by local SDK mocks. Official guidance: [Cloudinary access control](https://cloudinary.com/documentation/control_access_to_media).
+
+### Tracking, attachment, deletion, and recovery
+
+`MediaAsset` stores owner/uploader ID, kind, status, deterministic Cloudinary public ID, resource/delivery types, format, MIME, byte size, dimensions/duration, and timestamps. API credentials are never stored in it. All ADMINs manage church-owned assets; uploader identity is retained for audit, rather than restricting deletion to the original uploader.
+
+A committed UPLOADING reservation is created **before** any provider call. A row lock protects the upload and final metadata update. If the initial database write fails, no provider upload starts. If uploading or finalization fails, the transaction rolls back, cleanup uses the reserved ID, and the durable reservation survives. Failed compensation remains `CLEANUP_PENDING`; the scheduler retries. Provider errors are sanitized; a failed initial/final database operation returns `503`, a failed provider operation `502`, invalid input `400`, unsupported media `415`, excessive bytes `413`, and exhausted upload slots `429`.
+
+For image attachment, save **both** the returned `publicId` and `url` using the appropriate existing library fields:
+
+- Artist: `imagePublicId` and `imageUrl`, using folder `artists`.
+- Album: `coverImagePublicId` and `coverImageUrl`, using folder `albums`.
+- Song artwork: `coverImagePublicId` and `coverImageUrl`, using folder `songs` when song writing is implemented.
+- Song audio: `audioPublicId` and `audioResourceType`, using the authenticated audio metadata when song writing is implemented.
+
+The public ID is the authoritative tracked reference. A URL alone does not associate a staged asset with a database record and does not protect it from expiry. Legacy external references remain supported, but they are not imported into MediaAsset or automatically cleaned up.
+
+Database triggers validate READY status, folder/kind compatibility, and audio resource type when a managed public ID is attached. They take row locks to serialize attachment against deletion, preventing a new record from linking an asset that is being removed. Attempts to attach non-ready, deleted, or wrong-folder tracked media return `409`. Storage identity is immutable; live tracking rows cannot be hard-deleted before confirmed remote deletion.
+
+Deletion resolves only the internal asset UUID and stored identity, rejects referenced assets with `409`, durably commits cleanup intent before contacting the provider, calls Cloudinary destroy with the stored resource/delivery types and cache invalidation, and retains a DELETED tombstone. Unknown UUIDs return `404`; repeated confirmed deletion is harmless. Public-image CDN invalidation is asynchronous, so deletion confirmation is not a promise that every cached copy vanishes immediately.
+
+The worker starts when media is enabled and runs every 60 seconds by default. It processes bounded batches with SKIP LOCKED and no overlapping pass per process. In-flight uploads remain protected by their row locks. Stale UPLOADING reservations and uncertain failures are reconciled after the configured grace period (default 15 minutes, minimum 10 minutes), allowing late provider completion after timeouts. Unreferenced READY uploads are staging assets and expire after **24 hours**; attach them to library records promptly. Linked assets are not expired. Cleanup stops before database shutdown.
+
+Cloudinary and PostgreSQL cannot share an atomic transaction: during outages, remote files may temporarily remain, but their committed storage keys remain available for reconciliation. Monitor unresolved UPLOADING/CLEANUP_PENDING records and restore database/provider access so retry can complete. Do not discard tracking data or reset the database while media remains. Migration rollback refuses to drop media tracking while any non-DELETED assets exist.
+
+### Automated verification
+
+```sh
+npm run typecheck
+npm test
+npm run build
+# Apply migrations to a dedicated database, then set TEST_DATABASE_URL securely:
+npm run test:media:db
+```
+
+Jest covers real signatures/container checks, all supported formats, invalid/oversized files, unauthorized/member requests, fixed destinations, concurrency limits, safe provider options, upload failures, database finalization failures, compensation, deletion, and scheduler shutdown. PostgreSQL integration uses real authentication, multipart handling, transactions, and triggers with **only Cloudinary replaced by a test double**. It verifies persisted ownership/status, failure recovery, stale/unattached cleanup, referenced-file protection, incompatible attachments, and attachment/deletion races. It does not contact or validate a live Cloudinary account.
+
+Implementation is under `src/media/`: module/controller/service, Cloudinary adapter, file inspector, multipart/capacity interceptors, repository, cleanup worker, DTOs, and tests. No audio playback or file uploads in other feature modules are added.
