@@ -266,3 +266,58 @@ npm run test:auth:db
 ```
 
 This command builds and starts a temporary compiled API against the test database, verifies persisted hashing, normalized email races, login, current profile, suspension and deletion revocation, then removes only uniquely named fixtures and stops its server. Never use a production database. Existing `npm run test:db` checks remain available. No schema migration is needed for authentication because the User fields already exist.
+
+## User management
+
+All user management endpoints require a bearer JWT and a currently ACTIVE account. They appear under **Users** in Swagger. No schema migration is required for this module.
+
+| Method and path | Allowed roles | Behavior |
+| --- | --- | --- |
+| `GET /api/v1/users` | ADMIN | Paginated safe user profiles, optionally filtered by role/status. |
+| `GET /api/v1/users/:id` | ADMIN | Safe profile for a UUID. |
+| `PATCH /api/v1/users/:id/status` | ADMIN | Set `PENDING`, `ACTIVE` (approval), or `SUSPENDED`. |
+| `PATCH /api/v1/users/:id/role` | ADMIN | Set `ADMIN` or `MEMBER`. |
+| `PATCH /api/v1/users/me` | ADMIN, MEMBER | Update only your own name. |
+
+List example: `/api/v1/users?page=1&limit=20&role=MEMBER&status=PENDING`. `page` defaults to 1 (range 1–1000000), and `limit` defaults to 20 (range 1–100). Results use descending creation time with UUID as a deterministic tie-breaker. Response shape:
+
+```json
+{
+  "data": [],
+  "page": 1,
+  "limit": 20,
+  "total": 0,
+  "totalPages": 0
+}
+```
+
+Pagination is based on the filtered total. A page beyond the last returns an empty `data` array. Filters are case-sensitive enums. Invalid or unknown query/body fields are rejected.
+
+Example update bodies:
+
+```json
+{ "status": "ACTIVE" }
+```
+
+```json
+{ "role": "ADMIN" }
+```
+
+```json
+{ "name": "Grace James" }
+```
+
+Name updates require 2–200 characters after trimming. Profile updates reject email, password, role, status, identifiers, and other extra fields; the target is always the current authenticated user. Neither administrators nor members can change their own role or status, even to the existing value. This also applies to differently cased UUID spellings.
+
+Role/status changes run in READ COMMITTED transactions, use a shared PostgreSQL transaction-level advisory lock, lock affected rows, and re-check the actor's current ACTIVE/ADMIN permissions inside the transaction. Removing the last active administrator through demotion or setting a non-ACTIVE status is rejected with `409`. Self-mutations return `403` first, including when the caller is the last administrator. Concurrent mutual demotion/suspension cannot eliminate all administrators. Direct SQL changes outside this API do not participate in its advisory-lock protocol.
+
+Errors: `400` for invalid UUIDs/DTOs/query values; `401` for missing, expired, or revoked authentication; `403` for insufficient role, self-mutation, or actor permissions lost during a concurrent request; `404` for a missing target; `409` for last-active-admin protection. All responses use explicit safe DTOs without password hashes. Suspending a member prevents further authenticated requests using existing JWTs; role changes likewise take effect on the next request.
+
+Service and HTTP authorization tests run in `npm test`. Real PostgreSQL/API tests include approval, profile updates, pagination, role/status changes, immediate JWT revocation, and concurrent administrator protection:
+
+```sh
+# Set TEST_DATABASE_URL securely to a dedicated migrated test database.
+npm run test:users:db
+```
+
+Tests remove only their uniquely named fixtures. User management code is under `src/users/` with `UsersModule`, `UsersController`, `UsersService`, pagination/update DTOs, and service tests. There is no user deletion endpoint in this task.

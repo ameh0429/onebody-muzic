@@ -1,3 +1,4 @@
+import { UsersService } from '../src/users/users.service';
 import 'reflect-metadata';
 import { Controller, Get, INestApplication, Module, Post, Body } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -53,7 +54,7 @@ describe('API foundation', () => {
     process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AuthRepository).useValue({}).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();
