@@ -837,3 +837,17 @@ Use a dedicated migrated test database. The suite checks JWT/role authorization,
 validation, UTC conversion, playlist references, publication changes, pagination,
 ordered songs, updates, safe deletion and Swagger metadata. Notifications and
 attendance are not implemented.
+
+## Test and security audit
+
+See [the backend audit report](docs/backend-audit.md) for the coverage map,
+executed results, test commands, Swagger browser check, and unresolved findings.
+Before starting this version, run `npm run db:migrate` to apply migration
+`008-auth-rate-limit`. Login and registration now use shared PostgreSQL attempt
+limits; configuration defaults are in `.env.example`. Requests over the limit
+receive 429 with `Retry-After`; unavailable limiter storage returns 503.
+
+For a dedicated migrated test database, set `TEST_DATABASE_URL` and run
+`npm run test:all` for TypeScript, Jest, and all PostgreSQL integration suites.
+Use `npm run test:security:db` for the new registration-to-playback workflow and
+shared rate-limit tests. Never use a production database for test fixtures.

@@ -1,3 +1,4 @@
+import { up as rateLimitUp, down as rateLimitDown } from './migrations/008-auth-rate-limit';
 import { Sequelize } from 'sequelize-typescript';
 import { SequelizeStorage, Umzug } from 'umzug';
 import { up as artistNamesUp, down as artistNamesDown } from './migrations/002-artist-name-uniqueness';
@@ -39,6 +40,10 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       name: '007-playlist-publication',
       up: ({ context }) => playlistsUp(context),
       down: ({ context }) => playlistsDown(context),
+    }, {
+      name: '008-auth-rate-limit',
+      up: ({ context }) => rateLimitUp(context),
+      down: ({ context }) => rateLimitDown(context),
     }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,

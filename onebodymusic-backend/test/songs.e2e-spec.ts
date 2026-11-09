@@ -1,3 +1,4 @@
+import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
 import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
 import { PlaylistsService } from '../src/playlists/playlists.service';
 import { INestApplication, Module } from '@nestjs/common';
@@ -36,7 +37,7 @@ describe('Song routes and secure playback authorization', () => {
     Object.assign(process.env, { JWT_SECRET: secret, CORS_ALLOWED_ORIGINS: 'http://localhost:5173', DATABASE_URL: 'postgresql://localhost/test', MEDIA_PLAYBACK_TTL_SECONDS: '60', JWT_ACCESS_TOKEN_TTL_SECONDS: '900' });
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideModule(MediaModule).useModule(TestDatabaseModule)
-      .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
+      .overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue({}).overrideProvider(SongsService).useValue(songs).compile();
     app = module.createNestApplication(); configureApp(app); await app.init(); tickets = app.get(PlaybackTicketsService);
     jwt = new JwtService({ secret, signOptions: { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: 'HS256', expiresIn: 900 } });

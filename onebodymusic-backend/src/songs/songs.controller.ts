@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiExtraModels, getSchemaPath, ApiBearerAuth, ApiBody, ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { pipeline } from 'node:stream/promises';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,6 +24,7 @@ const songExample = {
   createdAt: '2026-11-08T12:00:00.000Z', updatedAt: '2026-11-08T12:00:00.000Z',
 };
 
+@ApiExtraModels(PlaybackResponseDto)
 @ApiTags('Songs')
 @ApiBearerAuth()
 @ApiResponse({ status: 400, description: 'Invalid UUID, query/DTO, or artist/album mismatch.', type: ApiErrorDto })
@@ -55,9 +56,9 @@ export class SongsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiHeader({ name: 'Range', required: false, description: 'Single byte range for ticket requests, e.g. bytes=0-1023. Provider-supported seeking; multipart ranges are rejected.' })
   @ApiResponse({ status: 302, description: 'Redirect to a short-lived scoped ticket URL.', headers: { Location: { schema: { type: 'string' } }, 'Cache-Control': { schema: { type: 'string', example: 'private, no-store, max-age=0' } } } })
-  @ApiResponse({ status: 200, description: 'JSON ticket metadata with redirect=false, or an audio stream with a valid ticket.', type: PlaybackResponseDto })
+  @ApiResponse({ status: 200, description: 'JSON ticket metadata with redirect=false, or audio bytes with a valid ticket. Never a permanent provider URL.', content: { 'application/json': { schema: { $ref: getSchemaPath(PlaybackResponseDto) } }, 'audio/mpeg': { schema: { type: 'string', format: 'binary' } }, 'audio/mp4': { schema: { type: 'string', format: 'binary' } } } })
   @ApiResponse({ status: 206, description: 'Partial audio content; Content-Range/Content-Length reflect the provider range response.', content: { 'audio/mpeg': { schema: { type: 'string', format: 'binary' } }, 'audio/mp4': { schema: { type: 'string', format: 'binary' } } } })
-  @ApiResponse({ status: 416, description: 'Unsatisfiable byte range, with Content-Range: bytes */total.' })
+  @ApiResponse({ status: 416, description: 'Unsatisfiable byte range; empty response body.', headers: { 'Content-Range': { schema: { type: 'string', example: 'bytes */12345' } } } })
   @ApiResponse({ status: 502, description: 'Audio provider failed or did not honor the requested range.', type: ApiErrorDto })
   @ApiResponse({ status: 503, description: 'Audio delivery is disabled/not configured.', type: ApiErrorDto })
   async stream(@Param('id', new ParseUUIDPipe()) id: string, @Query() query: PlaybackQueryDto, @Req() request: PlaybackRequest, @Res() response: Response, @CurrentUser() user: UserResponseDto): Promise<void> {

@@ -35,6 +35,9 @@ describe('startup configuration validation', () => {
   it.each(['0', '14', '301', 'x'])('rejects unsafe playback TTL %s', (MEDIA_PLAYBACK_TTL_SECONDS) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', MEDIA_PLAYBACK_TTL_SECONDS })).toThrow('MEDIA_PLAYBACK_TTL_SECONDS');
   });
+  it.each([{ AUTH_LOGIN_MAX_ATTEMPTS: '0' }, { AUTH_REGISTER_MAX_ATTEMPTS: '101' }, { AUTH_RATE_LIMIT_WINDOW_SECONDS: '9' }, { AUTH_LOGIN_MAX_ATTEMPTS: '1.5' }])('rejects invalid authentication limits %j', (values) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', ...values })).toThrow('AUTH_');
+  });
   it('rejects invalid runtime modes', () => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', NODE_ENV: 'invalid' })).toThrow('NODE_ENV');
   });

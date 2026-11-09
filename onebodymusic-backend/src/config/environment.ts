@@ -2,6 +2,15 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @Type(() => Number) @IsInt() @Min(1) @Max(100)
+  AUTH_LOGIN_MAX_ATTEMPTS: number = 10;
+
+  @Type(() => Number) @IsInt() @Min(1) @Max(100)
+  AUTH_REGISTER_MAX_ATTEMPTS: number = 5;
+
+  @Type(() => Number) @IsInt() @Min(10) @Max(3600)
+  AUTH_RATE_LIMIT_WINDOW_SECONDS: number = 60;
+
   @Type(() => Number)
   @IsInt()
   @Min(15)

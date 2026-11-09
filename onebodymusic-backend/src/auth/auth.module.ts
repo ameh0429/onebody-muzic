@@ -1,3 +1,5 @@
+import { AuthRateLimitGuard } from './rate-limit/auth-rate-limit.guard';
+import { AuthRateLimitStore } from './rate-limit/auth-rate-limit.store';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -25,7 +27,7 @@ import { JWT_AUDIENCE, JWT_ISSUER } from './auth.constants';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, JwtStrategy, JwtAuthGuard, RolesGuard],
+  providers: [AuthRateLimitGuard, AuthRateLimitStore, AuthService, AuthRepository, JwtStrategy, JwtAuthGuard, RolesGuard],
   exports: [JwtAuthGuard, RolesGuard, AuthService],
 })
 export class AuthModule {}
