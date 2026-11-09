@@ -1,3 +1,4 @@
+import { CloudinaryOperationError } from './errors/media-operation.error';
 import { BadGatewayException, ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Transaction } from 'sequelize';
 import { MediaAsset, MediaKind, MediaStatus } from '../database/models';
@@ -47,17 +48,22 @@ describe('durable media lifecycle and compensation', () => {
   });
   it('compensates upload failures and retains a durable pending record for uncertain outcomes', async () => {
     provider.upload.mockRejectedValue(new Error('private provider error'));
-    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toBeInstanceOf(BadGatewayException);
+    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toMatchObject({ status: 502 });
     expect(asset.status).toBe(MediaStatus.CLEANUP_PENDING); expect(provider.destroy).toHaveBeenCalledWith(asset);
+  });
+  it.each(['TIMEOUT', 'CONNECTION', 'TLS'] as const)('persists cleanup intent without a second blocking provider call after %s', async (failure) => {
+    provider.upload.mockRejectedValue(new CloudinaryOperationError(failure));
+    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toMatchObject({ status: failure === 'TIMEOUT' ? 504 : 502, failure });
+    expect(asset.status).toBe(MediaStatus.CLEANUP_PENDING); expect(provider.destroy).not.toHaveBeenCalled();
   });
   it('cleans up a successful remote upload if the final database write fails', async () => {
     jest.mocked(asset.update).mockRejectedValueOnce(new Error('database write failed'));
-    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toMatchObject({ status: 503, failure: 'SAVE' });
     expect(provider.upload).toHaveBeenCalled(); expect(provider.destroy).toHaveBeenCalled(); expect(asset.status).toBe(MediaStatus.CLEANUP_PENDING);
   });
   it('preserves cleanup intent when both upload and compensation fail', async () => {
     provider.upload.mockRejectedValue(new Error('upload failed')); provider.destroy.mockRejectedValue(new Error('destroy failed'));
-    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toBeInstanceOf(BadGatewayException); expect(asset.status).toBe(MediaStatus.CLEANUP_PENDING);
+    await expect(service.upload(uploaded(PNG), MediaKind.IMAGE, 'admin-id', ImageFolder.ARTISTS)).rejects.toMatchObject({ status: 502 }); expect(asset.status).toBe(MediaStatus.CLEANUP_PENDING);
   });
   it('fails closed without configuration', async () => {
     provider.configured.mockReturnValue(false);

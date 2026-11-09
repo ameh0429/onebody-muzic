@@ -32,7 +32,8 @@
     "test:rehearsals:db": "npm run build && tsx --test test/rehearsals.database.integration.ts",
     "test:security:db": "npm run build && tsx --test test/security.database.integration.ts",
     "test:integration": "npm run build && tsx --test --test-concurrency=1 test/*.integration.ts",
-    "test:all": "npm run typecheck && npm test && npm run test:integration"
+    "test:all": "npm run typecheck && npm test && npm run test:integration",
+    "media:check": "tsx src/media/check-cloudinary.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",

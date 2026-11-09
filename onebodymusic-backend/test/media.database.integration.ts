@@ -1,3 +1,4 @@
+import { CloudinaryOperationError } from '../src/media/errors/media-operation.error';
 import 'reflect-metadata';
 import 'dotenv/config';
 import assert from 'node:assert/strict';
@@ -23,16 +24,17 @@ const compiled = createRequire(__filename);
 test('media tracking, real multipart/auth/database, provider failures, and reconciliation', async (t) => {
   const db = createDatabase(url); const email = `media-admin-${randomUUID()}@example.org`;
   const suffix = randomUUID(); const password = randomBytes(24).toString('hex');
-  const remote = new Set<string>(); let failUpload = false; let failDestroy = false; let failPersistence = false; let failDeletionPersistence = false;
+  const remote = new Set<string>(); let timeoutUpload = false; let destroyCalls = 0; let failUpload = false; let failDestroy = false; let failPersistence = false; let failDeletionPersistence = false;
   let destroyGate: Promise<void> | undefined; let destroyEntered = false;
   const provider = {
     configured: () => true,
     upload: async (buffer: Buffer, asset: MediaAsset) => {
       remote.add(asset.publicId);
+      if (timeoutUpload) { const ErrorType = (compiled('../dist/media/errors/media-operation.error') as { CloudinaryOperationError: typeof CloudinaryOperationError }).CloudinaryOperationError; throw new ErrorType('TIMEOUT'); }
       if (failUpload) throw new Error('Simulated provider failure');
       return { bytes: buffer.length, format: asset.format, duration: asset.kind === MediaKind.AUDIO ? 3 : null, width: asset.kind === MediaKind.IMAGE ? 1 : null, height: asset.kind === MediaKind.IMAGE ? 1 : null };
     },
-    destroy: async (asset: MediaAsset) => { if (destroyGate) { destroyEntered = true; await destroyGate; } if (failDestroy) throw new Error('Simulated provider deletion failure'); remote.delete(asset.publicId); },
+    destroy: async (asset: MediaAsset) => { destroyCalls++; if (destroyGate) { destroyEntered = true; await destroyGate; } if (failDestroy) throw new Error('Simulated provider deletion failure'); remote.delete(asset.publicId); },
     imageUrl: (asset: MediaAsset) => asset.kind === MediaKind.IMAGE ? `https://res.cloudinary.com/media-test/image/upload/${asset.publicId}.${asset.format}` : null,
   };
   let app: INestApplication | undefined; let ownerId = ''; let base = ''; let token = '';
@@ -68,6 +70,15 @@ test('media tracking, real multipart/auth/database, provider failures, and recon
       assert.equal(body.deliveryType, 'authenticated'); assert.equal(body.resourceType, 'video'); assert.equal(body.url, null);
       const record = await MediaAsset.findByPk(body.id, { rejectOnEmpty: true }); assert.equal(record.uploadedById, ownerId); assert.equal(record.status, MediaStatus.READY); assert.ok(remote.has(body.publicId));
       assert.equal((await remove(body.id)).status, 204); assert.equal((await remove(body.id)).status, 204); assert.equal(remote.has(body.publicId), false);
+    });
+    await t.test('returns a safe timeout without blocking on deletion, then reconciles durable cleanup', async () => {
+      const before = new Set((await MediaAsset.findAll({ where: { uploadedById: ownerId } })).map((asset) => asset.id));
+      const deletions = destroyCalls; timeoutUpload = true;
+      const response = await upload('audio'); timeoutUpload = false;
+      assert.equal(response.status, 504); const body = await response.json() as { message: string }; assert.ok(body.message.includes('Cloudinary did not respond'));
+      assert.equal(destroyCalls, deletions);
+      const asset = (await MediaAsset.findAll({ where: { uploadedById: ownerId } })).find((item) => !before.has(item.id)); assert.ok(asset); assert.equal(asset.status, MediaStatus.CLEANUP_PENDING); assert.ok(remote.has(asset.publicId));
+      await age(asset.id); await media!.reconcile(900); await asset.reload(); assert.equal(asset.status, MediaStatus.DELETED); assert.equal(remote.has(asset.publicId), false);
     });
     await t.test('protects referenced images, rejects wrong-folder attachments, and rejects deleted references', async () => {
       const image = await upload('images'); assert.equal(image.status, 201); const asset = await image.json() as MediaResponseDto;

@@ -1,3 +1,4 @@
+import { MediaOperationException } from '../../media/errors/media-operation.error';
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { DatabaseError } from 'sequelize';
 import { STATUS_CODES } from 'node:http';
@@ -16,7 +17,7 @@ export class HttpExceptionFilter implements ExceptionFilter<unknown> {
     const mediaConflict = parent?.code === '23514' && parent.constraint === 'media_reference_ready';
     const status = mediaConflict ? HttpStatus.CONFLICT : exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string | string[] = mediaConflict ? 'Media reference is unavailable, incompatible, or still in use' : 'Internal server error';
-    if (exception instanceof HttpException && status < 500) {
+    if (exception instanceof HttpException && (status < 500 || exception instanceof MediaOperationException)) {
       const body: unknown = exception.getResponse();
       if (typeof body === 'string') message = body;
       else if (typeof body === 'object' && body !== null && 'message' in body) {

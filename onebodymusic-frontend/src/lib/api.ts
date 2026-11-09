@@ -9,6 +9,7 @@ api.interceptors.response.use((response) => response, (error: unknown) => {
 });
 export function message(error: unknown): string {
   if (axios.isAxiosError(error)) {
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return 'The request timed out while waiting for the server. Check the backend media diagnostics before retrying; any unfinished upload remains tracked for cleanup.';
     if (error.response?.status === 429) return `Too many attempts. Please try again in ${String(error.response.headers['retry-after'] || '60')} seconds.`;
     const body: unknown = error.response?.data;
     if (body && typeof body === 'object' && 'message' in body) { const detail: unknown = body.message; if (typeof detail === 'string') return detail; if (Array.isArray(detail) && detail.every((v: unknown) => typeof v === 'string')) return detail.join('. '); }

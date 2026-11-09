@@ -6,7 +6,7 @@ import { CloudinaryClient } from './cloudinary.client';
 import { EnvironmentVariables } from '../config/environment';
 import { MediaAsset, MediaKind } from '../database/models';
 
-jest.mock('cloudinary', () => ({ v2: { uploader: { upload_stream: jest.fn(), destroy: jest.fn() }, url: jest.fn() } }));
+jest.mock('cloudinary', () => ({ v2: { uploader: { upload_stream: jest.fn(), destroy: jest.fn() }, api: { ping: jest.fn() }, url: jest.fn() } }));
 
 const streamUpload = cloudinary.uploader.upload_stream as unknown as jest.Mock<PassThrough, [UploadApiOptions, UploadResponseCallback]>;
 const destroy = jest.mocked(cloudinary.uploader.destroy);
@@ -30,7 +30,17 @@ describe('Cloudinary authenticated-delivery boundary', () => {
     streamUpload.mockImplementation((_options, callback) => {
       const stream = new PassThrough(); stream.on('finish', () => callback?.(undefined, { public_id: asset.publicId, resource_type: 'video', type: 'upload', format: 'mp3', bytes: 3, audio: { codec: 'mp3' }, video: { codec: 'h264' } } as unknown as UploadApiResponse)); return stream;
     });
-    await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), asset)).rejects.toThrow('Unexpected Cloudinary upload metadata');
+    await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), asset)).rejects.toThrow('INVALID_RESPONSE');
+  });
+  it('checks credentials with a bounded read-only ping and classifies rejection safely', async () => {
+    jest.mocked(cloudinary.api.ping).mockResolvedValueOnce({ status: 'ok' }).mockRejectedValueOnce({ http_code: 401, message: 'private-key-must-not-leak' });
+    const provider = new CloudinaryClient(config); await provider.checkConnection();
+    await expect(provider.checkConnection()).rejects.toMatchObject({ failure: 'CREDENTIALS' });
+    expect(cloudinary.api.ping).toHaveBeenCalledWith(expect.objectContaining({ cloud_name: 'test-cloud', timeout: 10000 }));
+  });
+  it('classifies SDK timeout callbacks instead of losing the failure cause', async () => {
+    streamUpload.mockImplementation((_options, callback) => { const stream = new PassThrough(); stream.on('finish', () => callback?.({ name: 'TimeoutError', http_code: 499, message: 'Request Timeout' })); return stream; });
+    await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), audioAsset())).rejects.toMatchObject({ failure: 'TIMEOUT' });
   });
   it('destroys only the stored authenticated resource and requires confirmation', async () => {
     const asset = audioAsset(); destroy.mockResolvedValueOnce({ result: 'ok' }).mockResolvedValueOnce({ result: 'not found' }).mockResolvedValueOnce({ result: 'error' });

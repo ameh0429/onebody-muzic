@@ -851,3 +851,53 @@ For a dedicated migrated test database, set `TEST_DATABASE_URL` and run
 `npm run test:all` for TypeScript, Jest, and all PostgreSQL integration suites.
 Use `npm run test:security:db` for the new registration-to-playback workflow and
 shared rate-limit tests. Never use a production database for test fixtures.
+
+## Troubleshooting an audio upload that waits and returns 502/504
+
+If `/auth/me` succeeds but `/media/audio` fails, the upload has not yet reached song
+creation. `100%` browser progress means the file reached NestJS; it does not mean
+Cloudinary has accepted it. The frontend now identifies audio upload, artwork
+upload, and song-saving stages separately and retains form contents after errors.
+
+From the backend directory, with your normal `.env`:
+
+```sh
+npm run media:check
+```
+
+This sends a read-only Cloudinary Admin API ping with a ten-second total deadline.
+It prints no credentials. `TIMEOUT`/`CONNECTION` indicate a backend connection,
+DNS/firewall or proxy issue; `TLS` indicates trust/clock/proxy certificates;
+`CREDENTIALS` indicates rejected credentials/permissions. A restricted API key may
+lack Admin API ping permission even if it can upload; inspect that key's permissions.
+An OK ping verifies connection/authentication, not file decoding, upload quotas or
+private delivery entitlement. Never paste `.env` or API secrets into chat or logs.
+
+Check `MEDIA_ENABLED=true` and the cloud name, API key and API secret from the same
+Cloudinary product environment. Keep credentials only in the backend. On Windows,
+allow Node.js outbound HTTPS and check VPN/firewall/proxy settings. If `HTTPS_PROXY`
+is set, confirm that proxy is running and trusts the required certificates. Do not
+disable TLS verification. A basic connectivity check without credentials is:
+
+```sh
+curl --connect-timeout 10 --max-time 20 -I https://api.cloudinary.com
+```
+
+An HTTP response, even 404/405, demonstrates that curl reached the service; it does
+not verify Node's TLS trust, SDK authentication or upload permissions. After a
+successful ping, try a small valid MP3 and inspect Cloudinary account upload limits.
+
+The upload now has an overall deadline (`MEDIA_UPLOAD_TIMEOUT_SECONDS=90` by default,
+5–300 seconds), in addition to the SDK socket timeout. Timed-out requests are
+aborted. Network/TLS/timeout failures persist cleanup intent and return without
+waiting on another provider call; the worker reconciles uncertain uploads after
+the existing stale-upload grace period. Other immediate compensation calls have
+a ten-second deadline. Do not discard MediaAsset records while cleanup is pending.
+Safe, fixed media error messages pass through the global exception filter; raw SDK
+messages and credentials do not. Backend logs identify an asset, stage and safe
+failure code, such as `stage=provider; code=TIMEOUT`.
+
+The frontend's `VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` defaults to 120 seconds. If you
+increase the backend deadline, set the frontend deadline at least 30 seconds higher
+and adjust any reverse-proxy timeout. Restart NestJS after `.env` changes and
+restart/rebuild Vite after `VITE_*` changes. This fix needs no database migration.

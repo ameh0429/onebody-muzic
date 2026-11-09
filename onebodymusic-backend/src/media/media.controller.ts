@@ -20,6 +20,7 @@ import { MediaResponseDto } from './dto/media-response.dto';
 @ApiResponse({ status: 400, description: 'Missing/empty file, unsafe filename, invalid fields, or UUID.', type: ApiErrorDto })
 @ApiResponse({ status: 401, description: 'Missing or invalid authentication.', type: ApiErrorDto })
 @ApiResponse({ status: 403, description: 'Active ADMIN required.', type: ApiErrorDto })
+@ApiResponse({ status: 504, description: 'Cloudinary total operation deadline exceeded; cleanup remains tracked.', type: ApiErrorDto })
 @ApiResponse({ status: 502, description: 'Cloudinary upload/deletion failed; cleanup is tracked and retried.', type: ApiErrorDto })
 @ApiResponse({ status: 503, description: 'Media disabled or not configured, or database unavailable.', type: ApiErrorDto })
 @Controller({ path: 'media', version: '1' })

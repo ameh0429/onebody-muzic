@@ -1,3 +1,4 @@
+import { CloudinaryOperationError, MediaOperationException } from './errors/media-operation.error';
 import { BadGatewayException, ConflictException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Transaction } from 'sequelize';
 import { randomUUID } from 'node:crypto';
@@ -32,7 +33,10 @@ export class MediaService {
       });
       if (!result) throw new ServiceUnavailableException('Media reservation is unavailable');
       return result;
-    } catch {
+    } catch (error: unknown) {
+      const failure = error instanceof CloudinaryOperationError ? error.failure : uploaded || !attempted ? 'SAVE' : 'PROVIDER';
+      this.logger.warn(`Media upload failed: asset=${id}; stage=${uploaded ? 'database' : 'provider'}; code=${failure}`);
+      const uncertain = ['TIMEOUT', 'CONNECTION', 'TLS'].includes(failure);
       // A failed transaction leaves the committed reservation behind for durable reconciliation.
       try {
         const prepared = await this.repository.locked(id, async (asset, transaction) => {
@@ -40,14 +44,13 @@ export class MediaService {
           await asset.update({ status: MediaStatus.CLEANUP_PENDING }, { transaction });
           return true;
         });
-        if (prepared) await this.repository.locked(id, async (asset, transaction) => {
+        if (prepared && !uncertain) await this.repository.locked(id, async (asset, transaction) => {
           if (asset.status !== MediaStatus.CLEANUP_PENDING || await this.repository.referenced(asset, transaction)) return;
           try { await this.cloudinary.destroy(asset); } catch { this.logger.warn(`Media cleanup pending: ${id}`); }
         });
       } catch { this.logger.error(`Media cleanup requires reconciliation: ${id}`); }
       // Do not mark the tombstone deleted yet: a timed-out upload may complete remotely after compensation.
-      if (uploaded || !attempted) throw new ServiceUnavailableException('Media metadata could not be saved; cleanup has been scheduled');
-      throw new BadGatewayException('Media upload could not be completed; cleanup has been scheduled');
+      throw new MediaOperationException(failure);
     }
   }
 

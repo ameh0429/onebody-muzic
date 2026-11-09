@@ -14,6 +14,10 @@ describe('safe API presentation and playback', () => {
     expect(message(error)).toBe('title required. artist required');
     error.response!.status = 429; error.response!.headers['retry-after'] = '42'; expect(message(error)).toContain('42 seconds');
   });
+  it('distinguishes request timeout from an ordinary disconnected request', () => {
+    expect(message(new AxiosError('private timeout detail', 'ECONNABORTED'))).toContain('request timed out');
+    expect(message(new AxiosError('private timeout detail', 'ETIMEDOUT'))).not.toContain('private timeout detail');
+  });
   it('does not dump Axios internals or arbitrary response objects into the interface', () => {
     const error = new AxiosError('private transport details', undefined, undefined, undefined, { status: 500, statusText: 'Failure', headers: new AxiosHeaders(), data: { sql: 'sensitive SQL' }, config: { headers: new AxiosHeaders() } });
     expect(message(error)).not.toContain('SQL');

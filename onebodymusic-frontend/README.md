@@ -201,3 +201,15 @@ Frontend MVP scope does not include offline downloads, notifications, attendance
 password recovery, refresh tokens, or full artist/album/song editing/deletion UIs.
 Those backend endpoints remain available through Swagger. The included admin flow
 covers creation/upload, account management, playlist management and scheduling.
+
+### Upload waits at 100% or fails with 502/504
+
+Browser transfer progress only measures sending bytes to NestJS. The screen now
+shows separate Cloudinary audio/artwork and database-saving stages. No song is
+published until all required steps succeed. Failure leaves the entered title and
+lyrics available for retry. Check the backend's `npm run media:check` command and
+safe stage/failure-code logs; a healthy `/auth/me` does not verify Cloudinary.
+Default request deadline is 120 seconds; configure
+`VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` at least 30 seconds above the backend upload
+deadline. Restart/rebuild after changing Vite environment variables. See the backend
+README troubleshooting section for local Windows networking, credentials and TLS.
