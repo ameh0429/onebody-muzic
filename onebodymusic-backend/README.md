@@ -780,3 +780,60 @@ TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/TEST_DATABASE npm ru
 
 The PostgreSQL suite exercises real JWT authentication, ownership, rehearsal
 publication, pagination, batch validation, duplicate races, ordering and deletion.
+
+## Rehearsals
+
+The Rehearsals module uses the existing database schema. Apply pending migrations
+with `npm run db:migrate`, then start the server normally. All endpoints require
+an active account and JWT; write operations require ADMIN in both guards and the
+service. Try the **Rehearsals** tag at `/api/docs` after using **Authorize**.
+
+Create with `POST /api/v1/rehearsals`:
+
+```json
+{
+  "title": "Sunday choir practice",
+  "description": "Practice opening worship songs",
+  "scheduledAt": "2026-11-15T17:00:00+01:00",
+  "playlistId": "<existing-rehearsal-playlist-uuid>"
+}
+```
+
+`scheduledAt` combines the rehearsal date and time. It must include seconds and
+`Z` or an explicit UTC offset; timezone-free values are rejected. For example,
+17:00 in Lagos (`+01:00`) is stored and returned as `2026-11-15T16:00:00.000Z`.
+All response timestamps use UTC ISO 8601. The client can display these timestamps
+in the viewer's timezone. This schedules a single event, with no recurrence.
+
+- `GET /api/v1/rehearsals?page=1&limit=20&period=upcoming` returns upcoming
+  rehearsals (`scheduledAt >= now`), soonest first. `period=past` returns past
+  rehearsals (`scheduledAt < now`), newest first. Omit period for all visible
+  rehearsals, soonest first. Pagination limits are 1–100; ties use rehearsal ID.
+- `GET /api/v1/rehearsals/:id` includes the associated playlist and songs in
+  playlist order. Song metadata excludes Cloudinary audio identifiers and URLs;
+  use the existing secure song playback endpoint to listen.
+- `PATCH /api/v1/rehearsals/:id` accepts title, description, scheduledAt and/or
+  playlistId. Null clears description. Empty updates and owner changes are rejected.
+- `DELETE /api/v1/rehearsals/:id` returns 204 and preserves the playlist, songs
+  and media.
+
+The associated playlist must exist and have type `REHEARSAL`; missing playlists
+return 404 and PERSONAL playlists return 400. Admins can schedule against drafts.
+A rehearsal's publication follows its playlist: publish through the existing
+playlist endpoint (`PATCH /api/v1/playlists/:id` with
+`{"publicationStatus":"PUBLISHED"}`). Members see only rehearsals associated
+with published rehearsal playlists, including in pagination totals. Draft or
+otherwise unavailable rehearsal details return 404. Unpublishing a playlist hides
+all linked rehearsals from members; replacing the linked playlist adopts the new
+playlist's visibility. No separate rehearsal publication flag is introduced.
+
+Run `npm test` for service and existing HTTP tests. Real PostgreSQL HTTP tests:
+
+```sh
+TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/TEST_DATABASE npm run test:rehearsals:db
+```
+
+Use a dedicated migrated test database. The suite checks JWT/role authorization,
+validation, UTC conversion, playlist references, publication changes, pagination,
+ordered songs, updates, safe deletion and Swagger metadata. Notifications and
+attendance are not implemented.

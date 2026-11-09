@@ -1,3 +1,4 @@
+import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
 import { PlaylistsService } from '../src/playlists/playlists.service';
 import { INestApplication, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -36,7 +37,7 @@ describe('Song routes and secure playback authorization', () => {
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideModule(MediaModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
-      .overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue({}).overrideProvider(SongsService).useValue(songs).compile();
+      .overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue({}).overrideProvider(SongsService).useValue(songs).compile();
     app = module.createNestApplication(); configureApp(app); await app.init(); tickets = app.get(PlaybackTicketsService);
     jwt = new JwtService({ secret, signOptions: { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: 'HS256', expiresIn: 900 } });
   });

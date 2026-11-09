@@ -1,3 +1,4 @@
+import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
 import { PlaylistsService } from '../src/playlists/playlists.service';
 import { SongsService } from '../src/songs/songs.service';
 import { MediaModule } from '../src/media/media.module';
@@ -30,7 +31,7 @@ describe('Album authorization, validation, and documentation', () => {
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
-      .overrideProvider(SongsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue(albums).compile();
+      .overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue(albums).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();
     jwt = new JwtService({ secret: process.env.JWT_SECRET, signOptions: { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: 'HS256', expiresIn: 900 } });
   });

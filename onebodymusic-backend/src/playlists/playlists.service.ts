@@ -35,7 +35,7 @@ export class PlaylistsService {
     const { rows, count } = await this.playlists.findAndCountAll({ where: { [Op.and]: [visibility, filters] }, attributes: COUNTS, limit: query.limit, offset: (query.page - 1) * query.limit, order: [['createdAt', 'DESC'], ['id', 'ASC']] });
     return { data: rows.map((playlist) => this.response(playlist)), page: query.page, limit: query.limit, total: count, totalPages: Math.ceil(count / query.limit) };
   }
-  findOne(id: string, actor: Actor): Promise<PlaylistDetailResponseDto> { return this.detail(id, actor); }
+  findOne(id: string, actor: Actor, transaction?: Transaction): Promise<PlaylistDetailResponseDto> { return this.detail(id, actor, transaction); }
 
   async update(id: string, dto: UpdatePlaylistDto, actor: Actor): Promise<PlaylistDetailResponseDto> {
     if (Object.keys(dto).length === 0) throw new BadRequestException('Provide at least one playlist field');
