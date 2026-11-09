@@ -31,6 +31,27 @@ describe('SongsService', () => {
     const result = await service.create(dto, 'admin-id'); expect(result.durationSeconds).toBe(241); expect(result.artist.name).toBe('Choir'); expect(result).not.toHaveProperty('audioPublicId');
     expect(songs.create).toHaveBeenCalledWith(expect.objectContaining({ audioAssetId: asset.id, audioPublicId: asset.publicId, audioResourceType: 'video', durationSeconds: 241, uploadedById: 'admin-id' }), { transaction });
   });
+  it('stores plain lyrics on create and returns them in details', async () => {
+    const lyrics = '  Amazing grace\r\n\r\nÌyìn Olúwa <chorus>  ';
+    song.lyrics = lyrics;
+    expect((await service.create({ ...dto, lyrics }, 'admin-id')).lyrics).toBe(lyrics);
+    expect(songs.create).toHaveBeenCalledWith(expect.objectContaining({ lyrics }), { transaction });
+    expect((await service.findOne('song-id')).lyrics).toBe(lyrics);
+  });
+  it('updates and clears lyrics while omitted lyrics remain untouched', async () => {
+    song.lyrics = 'Existing lyrics';
+    await service.update('song-id', { title: 'New title' }, 'admin-id');
+    expect(song.update).toHaveBeenLastCalledWith({ title: 'New title' }, { transaction });
+    expect(song.lyrics).toBe('Existing lyrics');
+    expect((await service.update('song-id', { lyrics: 'Verse\nChorus' }, 'admin-id')).lyrics).toBe('Verse\nChorus');
+    expect((await service.update('song-id', { lyrics: null }, 'admin-id')).lyrics).toBeNull();
+  });
+  it('omits lyrics from lists and excludes the column from summary/playback queries', async () => {
+    song.lyrics = 'Long private text'; songs.findAndCountAll.mockResolvedValue({ rows: [song], count: 1 });
+    const page = await service.list(new ListSongsDto());
+    expect(page.data[0]).not.toHaveProperty('lyrics');
+    expect(songs.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({ attributes: { exclude: ['lyrics'] } }));
+  });
   it('rejects missing artists/albums and mismatched album ownership', async () => {
     artists.findByPk.mockResolvedValueOnce(null); await expect(service.create(dto, 'admin-id')).rejects.toBeInstanceOf(NotFoundException);
     albums.findByPk.mockResolvedValueOnce(null); await expect(service.create(dto, 'admin-id')).rejects.toBeInstanceOf(NotFoundException);

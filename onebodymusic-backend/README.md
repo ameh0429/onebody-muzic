@@ -693,3 +693,28 @@ npm run test:songs:db
 ```
 
 Tests cover song creation, missing/mismatched artists/albums, ownership and concurrent reuse, search/filter/pagination/sorting, unauthorized writes, safe DTOs, cleanup on replacement/deletion, real ticket expiry/signature separation, wrong-song tokens, suspension, redirect/JSON browser flow, Range/HEAD forwarding, and provider failures. PostgreSQL integration uses real JWT auth, transactions, tracking, and streaming controller code while replacing Cloudinary upload/delivery with test doubles. Live Cloudinary delivery is not claimed without credentials.
+
+## Song lyrics
+
+ADMIN users may include optional `lyrics` in `POST /api/v1/songs` or update it through the existing `PATCH /api/v1/songs/:id` endpoint:
+
+```json
+{
+  "lyrics": "Amazing grace, how sweet the sound\nThat saved a wretch like me\n\nI once was lost, but now am found"
+}
+```
+
+Lyrics are plain text, limited to 50,000 characters. Line breaks, Unicode, and surrounding whitespace are preserved exactly; the backend does not interpret HTML or apply title-style normalization. Null characters and non-string values are rejected with `400`. The existing overall JSON request-body size limit also applies. An omitted field leaves current lyrics unchanged on PATCH; `null` clears lyrics; an empty string is accepted as explicit empty text. Creation without lyrics stores null.
+
+Authenticated ACTIVE members can read lyrics through `GET /api/v1/songs/:id`. Creation/update responses also include lyrics via `SongDetailResponseDto`. Paginated lists use `SongResponseDto` without lyrics and exclude the text column from their database query. Playback queries also exclude lyrics. No new endpoints or permissions are introduced, and audio playback behavior is unchanged.
+
+Apply Sequelize migration `006-song-lyrics` before restarting the API:
+
+```sh
+npm run db:migrate
+npm run start:dev
+```
+
+The migration adds nullable PostgreSQL TEXT with a 50,000-character check; existing songs receive null. Its rollback drops the column and therefore removes stored lyrics. Swagger documents the nullable field and detail response. Frontend consumers should render it as text and preserve line breaks (for example, `white-space: pre-wrap`), without rendering raw HTML.
+
+Service/HTTP tests in `npm test` cover storing, reading, preserving, clearing, invalid types/length, permission checks, and list omission. `npm run test:songs:db` verifies the same persistence behavior against a dedicated migrated PostgreSQL database, including exact multiline/Unicode preservation.

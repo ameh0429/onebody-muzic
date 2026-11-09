@@ -65,7 +65,7 @@ test('Songs API with tracked media ownership, transactional cleanup, and range p
     const artist = await Artist.create({ name: `Song Artist ${suffix}` }); const otherArtist = await Artist.create({ name: `Other Song Artist ${suffix}` }); artistIds.push(artist.id, otherArtist.id);
     const album = await Album.create({ title: 'Praise', artistId: artist.id, releaseYear: 2024 }); const otherAlbum = await Album.create({ title: 'Other', artistId: otherArtist.id, releaseYear: 2024 }); albumIds.push(album.id, otherAlbum.id);
     const upload = await audio(adminToken); const otherUpload = await audio(otherAdminToken);
-    const input = { title: `Amazing ${suffix}`, artistId: artist.id, albumId: album.id, category: 'Worship', audioAssetId: upload.id }; let primaryId = '';
+    const input = { title: `Amazing ${suffix}`, artistId: artist.id, albumId: album.id, category: 'Worship', audioAssetId: upload.id, lyrics: 'Initial verse\nChorus' }; let primaryId = '';
     await t.test('rejects invalid artist/album and unauthorized media reuse; creates owned READY audio', async () => {
       assert.equal((await call('songs', 'POST', memberToken, input)).status, 403);
       assert.equal((await call('songs', 'POST', adminToken, { ...input, artistId: randomUUID(), albumId: null })).status, 404);
@@ -73,10 +73,26 @@ test('Songs API with tracked media ownership, transactional cleanup, and range p
       assert.equal((await call('songs', 'POST', adminToken, { ...input, albumId: otherAlbum.id })).status, 400);
       assert.equal((await call('songs', 'POST', adminToken, { ...input, audioAssetId: otherUpload.id })).status, 403);
       const response = await call('songs', 'POST', adminToken, input); assert.equal(response.status, 201); const song = await response.json() as SongResponseDto; primaryId = song.id;
+      assert.equal((song as SongResponseDto & { lyrics: string }).lyrics, input.lyrics);
       assert.equal(song.durationSeconds, 241); assert.equal(song.artist.name, artist.name); assert.equal(song.album?.id, album.id); assert.equal(JSON.stringify(song).includes('audioPublicId'), false);
       assert.equal((await MediaAsset.findByPk(upload.id))?.status, MediaStatus.READY);
       assert.equal((await call(`media/${upload.id}`, 'DELETE', adminToken)).status, 409);
       assert.equal((await call('songs', 'POST', adminToken, input)).status, 409);
+    });
+    await t.test('persists exact lyrics, preserves omitted values, clears explicitly, and excludes list payloads', async () => {
+      const lyrics = '  Amazing grace\r\n\r\nÌyìn Olúwa <chorus>  ';
+      const update = await call(`songs/${primaryId}`, 'PATCH', adminToken, { lyrics }); assert.equal(update.status, 200);
+      assert.equal((await update.json() as { lyrics: string }).lyrics, lyrics);
+      assert.equal((await Song.findByPk(primaryId))?.lyrics, lyrics);
+      const detail = await call(`songs/${primaryId}`, 'GET', memberToken); assert.equal((await detail.json() as { lyrics: string }).lyrics, lyrics);
+      await call(`songs/${primaryId}`, 'PATCH', adminToken, { title: input.title });
+      assert.equal((await Song.findByPk(primaryId))?.lyrics, lyrics);
+      const listed = await call(`songs?artistId=${artist.id}`, 'GET', memberToken); const page = await listed.json() as SongsPageDto;
+      assert.ok(page.data.every((item) => !('lyrics' in item)));
+      assert.equal((await call(`songs/${primaryId}`, 'PATCH', memberToken, { lyrics: 'Forbidden' })).status, 403);
+      assert.equal((await call(`songs/${primaryId}`, 'PATCH', adminToken, { lyrics: 'x'.repeat(50001) })).status, 400);
+      assert.equal((await call(`songs/${primaryId}`, 'PATCH', adminToken, { lyrics: null })).status, 200);
+      assert.equal((await Song.findByPk(primaryId))?.lyrics, null);
     });
     await t.test('serializes concurrent reuse and supports title/category/artist/album filters and sorting', async () => {
       const race = await audio(adminToken); const body = { ...input, title: `Race ${suffix}`, audioAssetId: race.id };

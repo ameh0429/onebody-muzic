@@ -40,6 +40,11 @@ export class SongResponseDto {
   @ApiProperty({ format: 'date-time' })
   updatedAt!: string;
 }
+export class SongDetailResponseDto extends SongResponseDto {
+  @ApiProperty({ type: String, nullable: true, maxLength: 50000, example: 'Amazing grace, how sweet the sound\nThat saved a wretch like me', description: 'Plain text with original line breaks. Null when lyrics have not been provided.' })
+  lyrics!: string | null;
+}
+
 export class SongsPageDto {
   @ApiProperty({ type: [SongResponseDto] })
   data!: SongResponseDto[];

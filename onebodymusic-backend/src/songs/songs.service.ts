@@ -10,7 +10,7 @@ import { AudioUpstream, CloudinaryAudioGateway } from '../media/cloudinary-audio
 import { CreateSongDto } from './dto/create-song.dto';
 import { UpdateSongDto } from './dto/update-song.dto';
 import { ListSongsDto } from './dto/list-songs.dto';
-import { SongResponseDto, SongsPageDto } from './dto/song-response.dto';
+import { SongDetailResponseDto, SongResponseDto, SongsPageDto } from './dto/song-response.dto';
 import { PlaybackTicketsService } from './playback-tickets.service';
 import { PlaybackResponseDto } from './dto/playback.dto';
 
@@ -20,14 +20,14 @@ const INCLUDES = [{ model: Artist, as: 'artist', attributes: ['id', 'name'], req
 export class SongsService {
   constructor(@InjectModel(Song) private readonly songs: typeof Song, @InjectModel(Artist) private readonly artists: typeof Artist, @InjectModel(Album) private readonly albums: typeof Album, @InjectModel(MediaAsset) private readonly assets: typeof MediaAsset, @InjectConnection() private readonly database: Sequelize, private readonly media: MediaService, private readonly cloudinary: CloudinaryClient, private readonly gateway: CloudinaryAudioGateway, private readonly tickets: PlaybackTicketsService) {}
 
-  async create(dto: CreateSongDto, actorId: string): Promise<SongResponseDto> {
+  async create(dto: CreateSongDto, actorId: string): Promise<SongDetailResponseDto> {
     return this.write(async (transaction) => {
       await this.validateArtistAlbum(dto.artistId, dto.albumId ?? null, transaction);
       const audio = await this.asset(dto.audioAssetId, MediaKind.AUDIO, actorId, transaction);
       await this.assertUnusedAudio(audio, transaction);
       const cover = dto.coverAssetId ? await this.asset(dto.coverAssetId, MediaKind.IMAGE, actorId, transaction) : null;
-      const song = await this.songs.create({ title: dto.title, artistId: dto.artistId, albumId: dto.albumId ?? null, category: dto.category ?? null, audioAssetId: audio.id, audioPublicId: audio.publicId, audioResourceType: audio.resourceType, durationSeconds: this.duration(audio), uploadedById: actorId, coverAssetId: cover?.id ?? null, coverImagePublicId: cover?.publicId ?? null, coverImageUrl: cover ? this.cloudinary.imageUrl(cover) : null }, { transaction });
-      return this.response(await this.required(song.id, transaction, false, true));
+      const song = await this.songs.create({ title: dto.title, artistId: dto.artistId, albumId: dto.albumId ?? null, category: dto.category ?? null, lyrics: dto.lyrics ?? null, audioAssetId: audio.id, audioPublicId: audio.publicId, audioResourceType: audio.resourceType, durationSeconds: this.duration(audio), uploadedById: actorId, coverAssetId: cover?.id ?? null, coverImagePublicId: cover?.publicId ?? null, coverImageUrl: cover ? this.cloudinary.imageUrl(cover) : null }, { transaction });
+      return this.detailResponse(await this.required(song.id, transaction, false, true));
     });
   }
 
@@ -37,23 +37,24 @@ export class SongsService {
     if (query.albumId) where.albumId = query.albumId;
     if (query.category) where.category = query.category;
     if (query.search) where.title = { [Op.iLike]: `%${query.search.replace(/[\\%_]/g, '\\$&')}%` };
-    const { rows, count } = await this.songs.findAndCountAll({ where, include: INCLUDES, limit: query.limit, offset: (query.page - 1) * query.limit, order: [[query.sortBy, query.sortOrder], ['id', 'ASC']] });
+    const { rows, count } = await this.songs.findAndCountAll({ where, attributes: { exclude: ['lyrics'] }, include: INCLUDES, limit: query.limit, offset: (query.page - 1) * query.limit, order: [[query.sortBy, query.sortOrder], ['id', 'ASC']] });
     return { data: rows.map((song) => this.response(song)), page: query.page, limit: query.limit, total: count, totalPages: Math.ceil(count / query.limit) };
   }
-  async findOne(id: string): Promise<SongResponseDto> { return this.response(await this.required(id, undefined, false, true)); }
+  async findOne(id: string): Promise<SongDetailResponseDto> { return this.detailResponse(await this.required(id, undefined, false, true)); }
 
-  async update(id: string, dto: UpdateSongDto, actorId: string): Promise<SongResponseDto> {
+  async update(id: string, dto: UpdateSongDto, actorId: string): Promise<SongDetailResponseDto> {
     if (Object.keys(dto).length === 0) throw new BadRequestException('Provide at least one song field');
     return this.write(async (transaction) => {
       const song = await this.required(id, transaction, true);
       const artistId = dto.artistId ?? song.artistId;
       const albumId = dto.albumId === undefined ? song.albumId : dto.albumId;
       await this.validateArtistAlbum(artistId, albumId, transaction);
-      const changes: Partial<Pick<Song, 'title' | 'artistId' | 'albumId' | 'category' | 'audioAssetId' | 'audioPublicId' | 'audioResourceType' | 'durationSeconds' | 'coverAssetId' | 'coverImageUrl' | 'coverImagePublicId'>> = {};
+      const changes: Partial<Pick<Song, 'title' | 'artistId' | 'albumId' | 'category' | 'lyrics' | 'audioAssetId' | 'audioPublicId' | 'audioResourceType' | 'durationSeconds' | 'coverAssetId' | 'coverImageUrl' | 'coverImagePublicId'>> = {};
       if (dto.title !== undefined) changes.title = dto.title;
       if (dto.artistId !== undefined) changes.artistId = dto.artistId;
       if (dto.albumId !== undefined) changes.albumId = dto.albumId;
       if (dto.category !== undefined) changes.category = dto.category;
+      if (dto.lyrics !== undefined) changes.lyrics = dto.lyrics;
       const oldAudioId = song.audioAssetId; const oldCoverId = song.coverAssetId;
       if (dto.audioAssetId !== undefined) {
         const audio = await this.asset(dto.audioAssetId, MediaKind.AUDIO, actorId, transaction, oldAudioId);
@@ -67,7 +68,7 @@ export class SongsService {
       await song.update(changes, { transaction });
       if (oldAudioId && changes.audioAssetId && oldAudioId !== changes.audioAssetId) await this.media.scheduleUnreferenced(oldAudioId, transaction);
       if (oldCoverId && dto.coverAssetId !== undefined && oldCoverId !== changes.coverAssetId) await this.media.scheduleUnreferenced(oldCoverId, transaction);
-      return this.response(await this.required(id, transaction, false, true));
+      return this.detailResponse(await this.required(id, transaction, false, true));
     });
   }
 
@@ -130,7 +131,7 @@ export class SongsService {
     return Math.ceil(asset.duration);
   }
   private async required(id: string, transaction?: Transaction, lock = false, details = false): Promise<Song> {
-    const song = await this.songs.findByPk(id, { transaction, ...(details ? { include: INCLUDES } : {}), ...(lock && transaction ? { lock: transaction.LOCK.UPDATE } : {}) });
+    const song = await this.songs.findByPk(id, { transaction, ...(details ? { include: INCLUDES } : { attributes: { exclude: ['lyrics'] } }), ...(lock && transaction ? { lock: transaction.LOCK.UPDATE } : {}) });
     if (!song) throw new NotFoundException('Song not found'); return song;
   }
   private async write<T>(work: (transaction: Transaction) => Promise<T>): Promise<T> {
@@ -145,6 +146,8 @@ export class SongsService {
       throw error;
     }
   }
+  private detailResponse(song: Song): SongDetailResponseDto { return { ...this.response(song), lyrics: song.lyrics ?? null }; }
+
   private response(song: Song): SongResponseDto {
     return { id: song.id, title: song.title, artistId: song.artistId, artist: { id: song.artist.id, name: song.artist.name }, albumId: song.albumId, album: song.album ? { id: song.album.id, title: song.album.title, releaseYear: song.album.releaseYear } : null, category: song.category, durationSeconds: song.durationSeconds, coverImageUrl: song.coverImageUrl, hasAudioAsset: Boolean(song.audioAssetId), createdAt: song.createdAt.toISOString(), updatedAt: song.updatedAt.toISOString() };
   }

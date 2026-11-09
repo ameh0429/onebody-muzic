@@ -62,6 +62,22 @@ describe('Song routes and secure playback authorization', () => {
     await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).set('Authorization', bearer(adminId)).send({ albumId: null, category: null }).expect(200);
     await request(app.getHttpServer()).delete(`/api/v1/songs/${songId}`).set('Authorization', bearer(adminId)).expect(204);
   });
+  it('allows only admins to create/update lyrics and preserves multiline text', async () => {
+    const lyrics = '  Verse\n\nÌyìn Olúwa <chorus>  ';
+    await request(app.getHttpServer()).post('/api/v1/songs').set('Authorization', bearer(adminId)).send({ ...body, lyrics }).expect(201);
+    expect(songs.create).toHaveBeenCalledWith(expect.objectContaining({ lyrics }), adminId);
+    await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).set('Authorization', bearer(adminId)).send({ lyrics: null }).expect(200);
+    expect(songs.update).toHaveBeenCalledWith(songId, { lyrics: null }, adminId);
+    await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).set('Authorization', bearer(memberId)).send({ lyrics }).expect(403);
+    await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).send({ lyrics }).expect(401);
+  });
+  it.each([123, true, {}, [], 'x'.repeat(50001), 'bad\u0000text'])('rejects invalid lyrics (case %#)', async (lyrics) => {
+    await request(app.getHttpServer()).post('/api/v1/songs').set('Authorization', bearer(adminId)).send({ ...body, lyrics }).expect(400);
+    await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).set('Authorization', bearer(adminId)).send({ lyrics }).expect(400);
+  });
+  it('accepts the 50000-character boundary, empty text, and null', async () => {
+    for (const lyrics of ['x'.repeat(50000), '', null]) await request(app.getHttpServer()).patch(`/api/v1/songs/${songId}`).set('Authorization', bearer(adminId)).send({ lyrics }).expect(200);
+  });
   it.each([{ title: ' ' }, { artistId: 'invalid' }, { audioAssetId: null }, { albumId: 'invalid' }, { category: ' ' }, { durationSeconds: 99 }, { audioPublicId: 'injected' }, { uploadedById: adminId }])('rejects invalid or privileged create fields %j', async (change) => {
     await request(app.getHttpServer()).post('/api/v1/songs').set('Authorization', bearer(adminId)).send({ ...body, ...change }).expect(400);
   });
@@ -105,5 +121,9 @@ describe('Song routes and secure playback authorization', () => {
     const response = await request(app.getHttpServer()).get('/api/docs-json').expect(200);
     const doc = response.body as { paths: Record<string, { get: { security: unknown; responses: object } }>; components: { schemas: Record<string, unknown> } };
     expect(doc.paths['/api/v1/songs/{id}/stream']?.get.responses).toHaveProperty('302'); expect(doc.paths['/api/v1/songs/{id}/stream']?.get.responses).toHaveProperty('206'); expect(doc.paths['/api/v1/songs/{id}/stream']?.get.security).toEqual([{ bearer: [] }]); expect(doc.components.schemas).toHaveProperty('CreateSongDto');
+    expect(doc.components.schemas).toHaveProperty('SongDetailResponseDto');
+    const schemas = doc.components.schemas as Record<string, { properties?: Record<string, unknown> }>;
+    expect(schemas.SongDetailResponseDto?.properties).toHaveProperty('lyrics');
+    expect(schemas.SongResponseDto?.properties).not.toHaveProperty('lyrics');
   });
 });

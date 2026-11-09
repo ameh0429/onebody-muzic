@@ -13,7 +13,7 @@ import { SongsService } from './songs.service';
 import { CreateSongDto } from './dto/create-song.dto';
 import { UpdateSongDto } from './dto/update-song.dto';
 import { ListSongsDto } from './dto/list-songs.dto';
-import { SongResponseDto, SongsPageDto } from './dto/song-response.dto';
+import { SongDetailResponseDto, SongsPageDto } from './dto/song-response.dto';
 import { PlaybackQueryDto, PlaybackResponseDto } from './dto/playback.dto';
 import { PlaybackAuthGuard, PlaybackRequest } from './guards/playback-auth.guard';
 
@@ -40,8 +40,8 @@ export class SongsController {
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Create a song (ADMIN)', description: 'Provide the audio MediaAsset UUID returned by the media upload endpoint. The audio must be READY, authenticated, uploaded by you, and unused. Duration and storage identifiers are resolved server-side.' })
   @ApiBody({ type: CreateSongDto })
-  @ApiResponse({ status: 201, type: SongResponseDto, example: songExample })
-  create(@Body() dto: CreateSongDto, @CurrentUser() user: UserResponseDto): Promise<SongResponseDto> { return this.songs.create(dto, user.id); }
+  @ApiResponse({ status: 201, type: SongDetailResponseDto, example: { ...songExample, lyrics: 'Amazing grace\nHow sweet the sound' } })
+  create(@Body() dto: CreateSongDto, @CurrentUser() user: UserResponseDto): Promise<SongDetailResponseDto> { return this.songs.create(dto, user.id); }
 
   @Get()
   @UseGuards(JwtAuthGuard)
@@ -89,10 +89,10 @@ export class SongsController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get safe song details' })
+  @ApiOperation({ summary: 'Get safe song details including plain-text lyrics' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, type: SongResponseDto, example: songExample })
-  findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<SongResponseDto> { return this.songs.findOne(id); }
+  @ApiResponse({ status: 200, type: SongDetailResponseDto, example: { ...songExample, lyrics: 'Amazing grace\nHow sweet the sound' } })
+  findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<SongDetailResponseDto> { return this.songs.findOne(id); }
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -100,8 +100,8 @@ export class SongsController {
   @ApiOperation({ summary: 'Update a song (ADMIN)', description: 'At least one field. Replacement media must be READY and owned by you; unchanged current media may be retained. Replaced unreferenced assets are scheduled for cleanup in the same transaction.' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiBody({ type: UpdateSongDto })
-  @ApiResponse({ status: 200, type: SongResponseDto, example: songExample })
-  update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateSongDto, @CurrentUser() user: UserResponseDto): Promise<SongResponseDto> { return this.songs.update(id, dto, user.id); }
+  @ApiResponse({ status: 200, type: SongDetailResponseDto, example: { ...songExample, lyrics: 'Amazing grace\nHow sweet the sound' } })
+  update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateSongDto, @CurrentUser() user: UserResponseDto): Promise<SongDetailResponseDto> { return this.songs.update(id, dto, user.id); }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)

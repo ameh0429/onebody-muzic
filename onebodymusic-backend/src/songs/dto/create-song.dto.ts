@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSongDto {
@@ -9,6 +9,13 @@ export class CreateSongDto {
   @MinLength(1)
   @MaxLength(200)
   title!: string;
+  @ApiPropertyOptional({ type: String, nullable: true, maxLength: 50000, example: 'Amazing grace, how sweet the sound\nThat saved a wretch like me', description: 'Plain text. Line breaks and whitespace are preserved. Omit or use null for no lyrics.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000)
+  @Matches(/^[^\u0000]*$/u, { message: 'lyrics must not contain null characters' })
+  lyrics?: string | null;
+
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   artistId!: string;
