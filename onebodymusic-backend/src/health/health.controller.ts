@@ -10,7 +10,7 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Check API liveness', description: 'Reports process health. Database connectivity is not checked in this initial foundation.' })
+  @ApiOperation({ summary: 'Check API liveness', description: 'Reports process health. This endpoint checks process liveness, not database or media provider readiness.' })
   @ApiOkResponse({ description: 'The API is running.', type: HealthResponseDto })
   @ApiInternalServerErrorResponse({ description: 'Unexpected server error.', type: ApiErrorDto })
   getHealth(): HealthResponseDto {

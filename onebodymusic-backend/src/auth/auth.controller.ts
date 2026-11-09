@@ -1,3 +1,4 @@
+import { AuthRateLimit } from './rate-limit/auth-rate-limit.guard';
 import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiErrorDto } from '../common/dto/api-error.dto';
@@ -23,6 +24,7 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('register')
+  @AuthRateLimit('register')
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Register a pending member', description: 'Always creates a MEMBER with PENDING status. Does not issue a token. Role and status fields are rejected.' })
   @ApiBody({ type: RegisterDto })
@@ -35,6 +37,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @AuthRateLimit('login')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Authenticate an active account', description: 'Unknown email, wrong password, pending, and suspended accounts receive the same generic failure. Copy accessToken into Authorize.' })

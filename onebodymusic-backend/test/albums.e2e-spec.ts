@@ -1,3 +1,8 @@
+import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
+import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
+import { PlaylistsService } from '../src/playlists/playlists.service';
+import { SongsService } from '../src/songs/songs.service';
+import { MediaModule } from '../src/media/media.module';
 import { INestApplication, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -25,9 +30,9 @@ describe('Album authorization, validation, and documentation', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = randomBytes(48).toString('hex'); process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = '900'; process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173'; process.env.DATABASE_URL = 'postgresql://localhost/test';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
-      .overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
-      .overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue(albums).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+      .overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
+      .overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue(albums).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();
     jwt = new JwtService({ secret: process.env.JWT_SECRET, signOptions: { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: 'HS256', expiresIn: 900 } });
   });

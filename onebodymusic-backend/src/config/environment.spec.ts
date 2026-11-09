@@ -23,6 +23,21 @@ describe('startup configuration validation', () => {
   it.each(['0', '59', '3601', 'abc', '1.5'])('rejects invalid JWT lifetime %s', (JWT_ACCESS_TOKEN_TTL_SECONDS) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', JWT_ACCESS_TOKEN_TTL_SECONDS })).toThrow('JWT_ACCESS_TOKEN_TTL_SECONDS');
   });
+  it('validates media credentials only when explicitly enabled', () => {
+    const base = { CORS_ALLOWED_ORIGINS: 'http://localhost:5173' };
+    expect(validateEnvironment(base).MEDIA_ENABLED).toBe('false');
+    expect(() => validateEnvironment({ ...base, MEDIA_ENABLED: 'true' })).toThrow('CLOUDINARY');
+    expect(validateEnvironment({ ...base, MEDIA_ENABLED: 'true', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: 'test-key', CLOUDINARY_API_SECRET: 'test-secret' }).MEDIA_ENABLED).toBe('true');
+  });
+  it.each([{ MEDIA_AUDIO_MAX_BYTES: '0' }, { MEDIA_IMAGE_MAX_BYTES: '999999999' }, { MEDIA_MAX_CONCURRENT_UPLOADS: '0' }, { MEDIA_STALE_UPLOAD_SECONDS: '30' }])('rejects invalid media bounds %j', (values) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', ...values })).toThrow('MEDIA_');
+  });
+  it.each(['0', '14', '301', 'x'])('rejects unsafe playback TTL %s', (MEDIA_PLAYBACK_TTL_SECONDS) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', MEDIA_PLAYBACK_TTL_SECONDS })).toThrow('MEDIA_PLAYBACK_TTL_SECONDS');
+  });
+  it.each([{ AUTH_LOGIN_MAX_ATTEMPTS: '0' }, { AUTH_REGISTER_MAX_ATTEMPTS: '101' }, { AUTH_RATE_LIMIT_WINDOW_SECONDS: '9' }, { AUTH_LOGIN_MAX_ATTEMPTS: '1.5' }])('rejects invalid authentication limits %j', (values) => {
+    expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', ...values })).toThrow('AUTH_');
+  });
   it('rejects invalid runtime modes', () => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', NODE_ENV: 'invalid' })).toThrow('NODE_ENV');
   });

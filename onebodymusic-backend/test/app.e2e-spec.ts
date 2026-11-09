@@ -1,3 +1,9 @@
+import { Logger } from '@nestjs/common';
+import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
+import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
+import { PlaylistsService } from '../src/playlists/playlists.service';
+import { SongsService } from '../src/songs/songs.service';
+import { MediaModule } from '../src/media/media.module';
 import { AlbumsService } from '../src/albums/albums.service';
 import { ArtistsService } from '../src/artists/artists.service';
 import { UsersService } from '../src/users/users.service';
@@ -56,7 +62,7 @@ describe('API foundation', () => {
     process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({}).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();
@@ -97,6 +103,27 @@ describe('API foundation', () => {
       const response = await request(app.getHttpServer()).post('/api/v1/probe').send(payload).expect(400);
       expect(response.body as ErrorBody).toMatchObject({ statusCode: 400, error: 'Bad Request', message: expect.any(Array) });
     }
+  });
+
+  it('redacts malformed JSON and rejects oversized JSON without echoing input', async () => {
+    const secret = 'DO-NOT-ECHO-THIS-PASSWORD';
+    const logger = jest.spyOn(Logger.prototype, 'error');
+    try {
+      const invalid = await request(app.getHttpServer()).post('/api/v1/auth/login').set('Content-Type', 'application/json').send(`{"password":"${secret}",}`).expect(400);
+      expect(invalid.body as object).toMatchObject({ message: 'Malformed request body', statusCode: 400 });
+      expect(JSON.stringify(invalid.body)).not.toContain(secret); expect(JSON.stringify(logger.mock.calls)).not.toContain(secret);
+      await request(app.getHttpServer()).post('/api/v1/probe').send({ name: 'x'.repeat(110000), count: 1 }).expect(413);
+    } finally { logger.mockRestore(); }
+  });
+
+  it('keeps authenticated API responses private and enforces more security headers', async () => {
+    const response = await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+    expect(response.headers['cache-control']).toContain('no-store');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['x-powered-by']).toBeUndefined();
+    const preflight = await request(app.getHttpServer()).options('/api/v1/users').set('Origin', 'https://untrusted.example').set('Access-Control-Request-Method', 'PATCH');
+    expect(preflight.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('hides internal error details', async () => {

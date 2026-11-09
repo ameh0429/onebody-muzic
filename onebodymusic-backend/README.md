@@ -1,6 +1,6 @@
 # OnebodyMusic backend
 
-NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management are implemented. Other library modules remain deferred.
+NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management, secure media uploads, and song management/playback are implemented. Other library modules remain deferred.
 
 ## Install and start
 
@@ -47,6 +47,8 @@ Environment variables override `.env`; `.env` is untracked.
 | `NODE_ENV` | `development`, `test`, or `production`; default `development`. |
 | `POSTGRES_PASSWORD` | Password for the optional Compose database; match it in `DATABASE_URL`. |
 | `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Required only for the explicit initial administrator seed. |
+| `MEDIA_ENABLED` | `false` by default; enable after configuring server-side Cloudinary credentials. |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Required only when media is enabled; never commit real values. |
 | `TEST_DATABASE_URL` | Dedicated, migrated PostgreSQL database for integration tests. |
 
 For a remote database, use its required TLS configuration (for example, the provider's verified `sslmode=verify-full` connection URL and trusted CA). Never disable certificate validation. No production secrets or administrator credentials are included in this repository.
@@ -91,7 +93,7 @@ Validation errors return `400` and a string array in `message`. Unexpected error
 
 ## Models and migrations
 
-The seven models are `User`, `Artist`, `Album`, `Song`, `Playlist`, `PlaylistSong`, and `Rehearsal`. Models use UUID primary and foreign keys, timestamp columns, explicit association aliases, and indexes for foreign keys and common filters. PostgreSQL generates UUID defaults; Sequelize manages `updatedAt` for ORM writes. Direct SQL writers must supply/update timestamps themselves.
+The application models are `User`, `Artist`, `Album`, `Song`, `Playlist`, `PlaylistSong`, `Rehearsal`, and `MediaAsset`. Models use UUID primary and foreign keys, timestamp columns, explicit association aliases, and indexes for foreign keys and common filters. PostgreSQL generates UUID defaults; Sequelize manages `updatedAt` for ORM writes. Direct SQL writers must supply/update timestamps themselves.
 
 - User email is unique. New users default to `MEMBER`/`PENDING`; playlists default to `PERSONAL`.
 - Referenced users, artists, songs, and rehearsal playlists have restrictive deletion policies.
@@ -453,3 +455,399 @@ npm run test:albums:db
 ```
 
 The integration suite verifies authorization, existing artist validation, per-artist and concurrent uniqueness, combined filters/search/pagination, artwork updates, associated song details, populated deletion at API and database levels, and empty-album deletion. It removes only its uniquely named fixtures. Existing artist/database tests now verify restrictive album deletion rather than the superseded automatic unlinking policy.
+
+## Secure media uploads (Cloudinary)
+
+The **Media** Swagger tag contains the multipart endpoints. All three require an ACTIVE ADMIN; members cannot upload or delete assets. This project uses Sequelize, so media tracking is installed through Sequelize migration `004-media-assets`, not Prisma.
+
+### Configure and run
+
+In the untracked `.env` or a secure server-side runtime environment, supply your own Cloudinary product-environment credentials and explicitly enable media:
+
+```env
+MEDIA_ENABLED=true
+CLOUDINARY_CLOUD_NAME=<your-cloud-name>
+CLOUDINARY_API_KEY=<your-api-key>
+CLOUDINARY_API_SECRET=<your-api-secret>
+MEDIA_AUDIO_MAX_BYTES=26214400
+MEDIA_IMAGE_MAX_BYTES=5242880
+MEDIA_MAX_CONCURRENT_UPLOADS=2
+MEDIA_CLEANUP_INTERVAL_SECONDS=60
+MEDIA_STALE_UPLOAD_SECONDS=900
+```
+
+The angle-bracket values are placeholders. Never commit credentials or put them in frontend code. The SDK needs the real server-side secret for cryptographic signing; an outbound HTTP proxy's credential placeholder cannot substitute for that signing value. No Cloudinary credentials, upload signatures, or raw SDK responses are returned by the API or logged.
+
+Media is disabled by default so the existing application can start without Cloudinary. When enabled, all three credential settings are required at startup. Disabled uploads return `503` before buffering files. The cleanup scheduler is also disabled while media is disabled; restore configuration and enable it to resume pending cleanup.
+
+```sh
+npm ci
+npm run db:migrate
+npm run start:dev
+```
+
+Defaults are 25 MiB for audio, 5 MiB for images, and two concurrent buffered uploads per API process. Audio limits can be configured from 1 KiB to 100 MiB, images from 1 KiB to 20 MiB, and concurrency from 1–8. Cloudinary's account limits may be lower. Multer enforces limits during parsing; the service checks buffer size again. Upload concurrency is bounded before multipart buffering. Size/concurrency changes must fit the deployment's memory budget, especially across multiple processes.
+
+The Cloudinary SDK uses the inherited HTTPS proxy through a verified proxy agent when configured; TLS verification stays enabled. In managed cloud environments allow outbound HTTPS to `api.cloudinary.com` for uploads/deletion and `res.cloudinary.com` for the audio gateway. The current environment draft also requests `cloudinary.com` for official documentation. Draft changes require review/save and publication to activate in a reusable environment. Local development uses your local network policy.
+
+### Endpoints and Swagger
+
+| Method and path | Multipart/body | Result |
+| --- | --- | --- |
+| `POST /api/v1/media/audio` | Exactly one `file`: MP3 or audio-only M4A. No other fields. | `201` authenticated audio metadata. |
+| `POST /api/v1/media/images` | One `file`: JPEG/PNG/WebP; `folder`: `artists`, `albums`, or `songs`. | `201` public-image metadata. |
+| `DELETE /api/v1/media/:id` | Internal MediaAsset UUID, not a Cloudinary ID or path. | `204` on confirmed deletion or an existing deleted tombstone. |
+
+Log in through Swagger, click **Authorize**, paste `accessToken` without a prefix, open the upload operation, and click **Try it out**. The `file` property is a real file picker. Choose an image destination from the enum dropdown. Let Swagger/browser set the multipart boundary; do not manually set `Content-Type` when using FormData.
+
+Accepted declared audio MIME types: `audio/mpeg`/`audio/mp3` for `.mp3`, and `audio/mp4`/`audio/x-m4a`/`audio/m4a` for `.m4a`. Accepted image MIME types are `image/jpeg`, `image/png`, and `image/webp`, matching `.jpg`/`.jpeg`, `.png`, and `.webp` respectively. Generic octet-stream, SVG, GIF, MP4 video, unsupported extensions, and mismatched declarations are rejected.
+
+Validation checks magic bytes as well as declared MIME and extension. MP3 requires two complete Layer III frames after an optional bounded ID3 header; audio-only M4A validates MP4 boxes and audio handler tracks while rejecting video tracks. Image signatures are checked locally and Cloudinary must successfully ingest the allowed format before READY status is saved. These practical signature/container checks do not replace antivirus or full local codec decoding. Filenames must start with a letter or digit, contain only letters/digits/spaces/dots/underscores/parentheses/hyphens, be at most 180 characters, and contain no `..`, path separators, or control characters. The original filename is never used as a storage key or persisted.
+
+Storage uses server-generated UUIDs in exactly these namespaces:
+
+```text
+onebodymusic/audio/<uuid>
+onebodymusic/artists/<uuid>
+onebodymusic/albums/<uuid>
+onebodymusic/songs/<uuid>
+```
+
+The SDK supplies the fixed folder and UUID, with client filenames ignored and overwriting disabled. Callers cannot choose folders beyond the image enum, public IDs, delivery types, resource types, or upload presets.
+
+Successful metadata contains `id`, `kind`, `status`, `folder`, `publicId`, `resourceType`, `deliveryType`, `format`, `mimeType`, `bytes`, `duration`, `width`, `height`, `url`, and `createdAt`. Unavailable dimensions/duration are null. For example, audio returns:
+
+```json
+{
+  "id": "6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "kind": "AUDIO",
+  "status": "READY",
+  "folder": "onebodymusic/audio",
+  "publicId": "onebodymusic/audio/6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "resourceType": "video",
+  "deliveryType": "authenticated",
+  "format": "mp3",
+  "mimeType": "audio/mpeg",
+  "bytes": 1048576,
+  "duration": 240,
+  "width": null,
+  "height": null,
+  "url": null,
+  "createdAt": "2026-11-08T12:00:00.000Z"
+}
+```
+
+### Audio privacy and delivery restrictions
+
+Audio uses Cloudinary's `resource_type: video` (also used for audio files) and **`type: authenticated`**. Authenticated delivery protects originals and derived assets; ordinary upload URLs or the mere use of HTTPS are not private. The service verifies the returned delivery/resource type before accepting the upload and never returns the SDK's raw `secure_url`, signature, or a signed audio URL. Images intentionally use public `upload` delivery and may be viewed by anyone with their URL.
+
+Media upload endpoints do not issue audio delivery URLs; song playback is described below. A OnebodyMusic JWT is not a Cloudinary CDN credential. Playback authorizes the current ACTIVE member through the expiring application gateway described in the Songs section. A basic signed transformation URL is shareable and does not automatically expire; token-based CDN authentication can require account/CDN features. Do not convert the audio asset or derived copies to public delivery, and do not treat a hidden public URL as access control. Membership suspension cannot revoke bytes already downloaded or an independently valid CDN URL; playback design needs short lifetimes or gateway enforcement.
+
+Before production use, verify that your Cloudinary product environment/plan supports authenticated video/audio delivery and the selected audio formats. Confirm that an unsigned request to a test authenticated original and derived asset is denied, and that the intended authorized delivery flow succeeds. Live account/CDN behavior cannot be established by local SDK mocks. Official guidance: [Cloudinary access control](https://cloudinary.com/documentation/control_access_to_media).
+
+### Tracking, attachment, deletion, and recovery
+
+`MediaAsset` stores owner/uploader ID, kind, status, deterministic Cloudinary public ID, resource/delivery types, format, MIME, byte size, dimensions/duration, and timestamps. API credentials are never stored in it. All ADMINs manage church-owned assets; uploader identity is retained for audit, rather than restricting deletion to the original uploader.
+
+A committed UPLOADING reservation is created **before** any provider call. A row lock protects the upload and final metadata update. If the initial database write fails, no provider upload starts. If uploading or finalization fails, the transaction rolls back, cleanup uses the reserved ID, and the durable reservation survives. Failed compensation remains `CLEANUP_PENDING`; the scheduler retries. Provider errors are sanitized; a failed initial/final database operation returns `503`, a failed provider operation `502`, invalid input `400`, unsupported media `415`, excessive bytes `413`, and exhausted upload slots `429`.
+
+For image attachment, save **both** the returned `publicId` and `url` using the appropriate existing library fields:
+
+- Artist: `imagePublicId` and `imageUrl`, using folder `artists`.
+- Album: `coverImagePublicId` and `coverImageUrl`, using folder `albums`.
+- Song artwork: `coverImagePublicId` and `coverImageUrl`, using folder `songs` when song writing is implemented.
+- Song audio: `audioPublicId` and `audioResourceType`, using the authenticated audio metadata when song writing is implemented.
+
+The public ID is the authoritative tracked reference. A URL alone does not associate a staged asset with a database record and does not protect it from expiry. Legacy external references remain supported, but they are not imported into MediaAsset or automatically cleaned up.
+
+Database triggers validate READY status, folder/kind compatibility, and audio resource type when a managed public ID is attached. They take row locks to serialize attachment against deletion, preventing a new record from linking an asset that is being removed. Attempts to attach non-ready, deleted, or wrong-folder tracked media return `409`. Storage identity is immutable; live tracking rows cannot be hard-deleted before confirmed remote deletion.
+
+Deletion resolves only the internal asset UUID and stored identity, rejects referenced assets with `409`, durably commits cleanup intent before contacting the provider, calls Cloudinary destroy with the stored resource/delivery types and cache invalidation, and retains a DELETED tombstone. Unknown UUIDs return `404`; repeated confirmed deletion is harmless. Public-image CDN invalidation is asynchronous, so deletion confirmation is not a promise that every cached copy vanishes immediately.
+
+The worker starts when media is enabled and runs every 60 seconds by default. It processes bounded batches with SKIP LOCKED and no overlapping pass per process. In-flight uploads remain protected by their row locks. Stale UPLOADING reservations and uncertain failures are reconciled after the configured grace period (default 15 minutes, minimum 10 minutes), allowing late provider completion after timeouts. Unreferenced READY uploads are staging assets and expire after **24 hours**; attach them to library records promptly. Linked assets are not expired. Cleanup stops before database shutdown.
+
+Cloudinary and PostgreSQL cannot share an atomic transaction: during outages, remote files may temporarily remain, but their committed storage keys remain available for reconciliation. Monitor unresolved UPLOADING/CLEANUP_PENDING records and restore database/provider access so retry can complete. Do not discard tracking data or reset the database while media remains. Migration rollback refuses to drop media tracking while any non-DELETED assets exist.
+
+### Automated verification
+
+```sh
+npm run typecheck
+npm test
+npm run build
+# Apply migrations to a dedicated database, then set TEST_DATABASE_URL securely:
+npm run test:media:db
+```
+
+Jest covers real signatures/container checks, all supported formats, invalid/oversized files, unauthorized/member requests, fixed destinations, concurrency limits, safe provider options, upload failures, database finalization failures, compensation, deletion, and scheduler shutdown. PostgreSQL integration uses real authentication, multipart handling, transactions, and triggers with **only Cloudinary replaced by a test double**. It verifies persisted ownership/status, failure recovery, stale/unattached cleanup, referenced-file protection, incompatible attachments, and attachment/deletion races. It does not contact or validate a live Cloudinary account.
+
+Implementation is under `src/media/`: module/controller/service, Cloudinary adapter, file inspector, multipart/capacity interceptors, repository, cleanup worker, DTOs, and tests. Media uploads remain isolated in this module; the Songs module below provides authorized playback and attachment.
+
+## Songs and secure audio playback
+
+The **Songs** Swagger tag provides ADMIN song creation/update/deletion and authenticated listing/details/playback. Apply Sequelize migration `005-song-media-assets` before starting:
+
+```sh
+npm run db:migrate
+npm run start:dev
+```
+
+Migration 005 adds nullable `audioAssetId` and `coverAssetId` foreign keys, a unique non-null audio asset index, and consistency triggers linking those IDs to the stored Cloudinary identifiers. Existing song rows remain intact; legacy rows without a tracked audio asset remain readable, but playback returns `409` until an administrator assigns an appropriate uploaded audio asset through PATCH. There is no automatic adoption of untracked provider IDs.
+
+| Method and path | Access | Result |
+| --- | --- | --- |
+| `POST /api/v1/songs` | ADMIN | `201` safe song metadata. |
+| `GET /api/v1/songs` | Authenticated | `200` paginated safe metadata. |
+| `GET /api/v1/songs/:id` | Authenticated | `200` song with artist/album metadata. |
+| `PATCH /api/v1/songs/:id` | ADMIN | `200` updated safe metadata. |
+| `DELETE /api/v1/songs/:id` | ADMIN | `204`; playlist-referenced songs return `409`. |
+| `GET /api/v1/songs/:id/stream` | Access JWT or scoped playback ticket | JWT requests issue a short-lived playback URL; ticket requests stream authenticated provider bytes. |
+
+### Create and update
+
+First upload audio through `POST /api/v1/media/audio` using the same administrator account. Supply the returned **internal asset `id`**, not its Cloudinary public ID:
+
+```json
+{
+  "title": "Amazing Grace",
+  "artistId": "a468f50d-33af-4fcf-93c8-e341bec66fd2",
+  "albumId": null,
+  "category": "Worship",
+  "audioAssetId": "6838918a-2b67-49ed-a90d-14b86ca955c7",
+  "coverAssetId": null
+}
+```
+
+Title (1–200 characters), artist UUID, and audio asset UUID are required. Title whitespace is normalized. Category is optional, trimmed/collapsed text of 1–100 characters, and can be cleared with null. Album and cover IDs are optional and nullable. Covers, if supplied, must be READY image assets uploaded into `onebodymusic/songs`.
+
+The artist must exist; a selected album must exist and belong to that artist. Audio must be READY, in the audio namespace, use authenticated `video` delivery, and be uploaded by the acting administrator. An audio asset can belong to only one song, including under concurrent requests. A different administrator cannot attach your unused upload. Metadata edits to an existing church-managed song are allowed to any ADMIN; retaining its unchanged current media is allowed without claiming another unused upload.
+
+Duration is taken from provider metadata and rounded up to integer seconds (or null if unavailable). The server copies provider public ID/resource type itself; requests cannot supply those fields, a duration, or an uploader ID. Song responses omit provider audio identifiers, private provider URLs, and upload owner information. They include title, IDs, category, duration, artist name, optional album title/year, public cover URL, `hasAudioAsset`, and timestamps.
+
+PATCH accepts a subset of the creation fields, with at least one field required. Required fields cannot be set to null. Changing an artist while retaining an incompatible album is rejected; change/clear the album in the same request. Replacement audio and new covers must meet the same ownership/readiness rules. Old, unreferenced tracked assets are marked CLEANUP_PENDING in the same database transaction, rather than making irreversible remote calls during a song write. Shared covers stay READY while referenced elsewhere.
+
+All song writes serialize using a transaction-level advisory lock and lock the relevant album, artist, and media records. Database uniqueness and reference triggers remain the final protection. If creation fails, the uploaded asset remains a tracked READY staging upload, available for retry and subject to the existing 24-hour unattached cleanup policy. Deletion refuses songs used by playlists. After a successful delete, now-unused tracked media is queued for the existing durable cleanup worker. Legacy untracked provider files are never deleted by guessing their storage identity.
+
+### Listing
+
+Example:
+
+```text
+/api/v1/songs?page=1&limit=20&artistId=<uuid>&albumId=<uuid>&category=Worship&search=grace&sortBy=title&sortOrder=ASC
+```
+
+Filters combine with AND. Category is exact/case-sensitive; title search is a literal case-insensitive substring with wildcard characters escaped. Page defaults to 1 (1–1000000), limit to 20 (1–100). Sorting is whitelisted to `title` or `createdAt`, with `ASC`/`DESC` and a UUID tie-breaker; defaults are `createdAt`/`DESC`. The response is `{ data, page, limit, total, totalPages }` with artist and optional album metadata. Unknown filter UUIDs return empty pages; malformed values and unknown fields return `400`.
+
+### Why playback uses expiring gateway tickets
+
+Ordinary Cloudinary URL signatures do **not** enforce a short expiry. The application therefore keeps its signed `video/authenticated` provider URLs entirely inside the backend. It never redirects the browser to those URLs. Instead it issues a short-lived, song-specific signed **application playback URL**, and streams the provider response through an authorization gateway.
+
+Playback tickets use a cryptographically separate derived signing key, fixed issuer/audience/purpose, user ID, song UUID, and expiry. They cannot authenticate to ordinary API endpoints, play another song, or mint new tickets. New ticket issuance always requires the normal access JWT. Every ticket request, including every new Range/HEAD request, verifies the ticket and re-reads the user from PostgreSQL; inactive, suspended, and deleted users receive `401`. All ACTIVE roles have library playback access. Already-started responses may finish, and downloaded bytes cannot be revoked.
+
+Configuration:
+
+```env
+MEDIA_PLAYBACK_TTL_SECONDS=60
+MEDIA_PLAYBACK_IDLE_TIMEOUT_SECONDS=30
+```
+
+Ticket lifetime is 15–300 seconds, default 60. Idle upstream timeout is 5–120 seconds, default 30. Cloudinary credentials and `MEDIA_ENABLED=true` are required for actual provider delivery; the signing secret is derived from the existing JWT secret and does not introduce a hardcoded key. Rotating JWT_SECRET also invalidates playback tickets. No additional Cloudinary token-auth/CDN account feature is assumed.
+
+### Browser flow and redirects
+
+With an access JWT, `GET /api/v1/songs/:id/stream` returns `302` with a relative `Location` pointing to the short-lived ticket URL and `X-Playback-Expires-At`. The destination remains this API; it is not a public/provider audio address.
+
+A browser `<audio>` element cannot attach a custom Authorization header. Fetch ticket metadata with the access JWT, then assign the resulting short-lived URL as its source:
+
+```js
+const response = await fetch(`${API_ORIGIN}/api/v1/songs/${songId}/stream?redirect=false`, {
+  headers: { Authorization: `Bearer ${accessToken}` }
+});
+if (!response.ok) throw new Error('Playback authorization failed');
+const playback = await response.json();
+audio.src = new URL(playback.url, API_ORIGIN).href;
+await audio.play();
+```
+
+The JSON contains `{ url, expiresAt, expiresIn }`. Do not fetch the whole audio as a Blob or put the access JWT in a query string. The `ticket` query parameter accepts only short-lived playback credentials. A ticket request always streams, even with `redirect=false`; it cannot extend its own lifetime. Obtain a fresh URL using the access JWT before a later seek/reconnect after expiry, preserving `audio.currentTime` when resetting the source. An expired ticket receives `401` on a new request; an already-authorized response is not cut off merely because its ticket expires mid-transfer.
+
+Ticket URLs are temporary bearer credentials: avoid storing them, redact the `ticket` parameter in reverse-proxy/access/analytics logs, and use HTTPS in production. Responses use `Cache-Control: private, no-store, max-age=0` and `Referrer-Policy: no-referrer`. Provider request headers contain no member JWT or cookies. Only safe audio type, length, range, and status headers are forwarded; provider redirects and provider URLs are not forwarded to clients.
+
+### Seeking and bounded streaming
+
+Native audio elements can request a single range such as `Range: bytes=0-1023`. The backend validates the range, sends it to Cloudinary's authenticated original, and returns the provider's `206`, `Content-Range`, `Content-Length`, and `Accept-Ranges: bytes`. Suffix/open ranges and HEAD are supported. Unsatisfiable ranges return `416` with `Content-Range: bytes */total`; malformed/multiple ranges return `400`. A provider that ignores a requested range or sends invalid range metadata is rejected with `502`, rather than silently downloading the whole file.
+
+Node streams use backpressure and cancellation to pipe bytes to the response. The backend never collects the full file into memory. Client disconnects abort the provider request; idle upstream connections time out. Full responses return `200`. Cloudinary must support authenticated original audio delivery and byte ranges for the configured product environment. Live delivery/range behavior still needs verification with your account; provider-contract test doubles do not establish live CDN readiness.
+
+Errors include `400` for input/artist-album mismatch, `401` for authentication/expiry/inactive accounts, `403` for unauthorized asset ownership or wrong song tickets, `404` for missing records, `409` for unavailable/reused media or playlist references, `416` for an unsatisfiable range, `502` for provider failures, and `503` for disabled/unconfigured delivery. Failures before response headers use the shared JSON error format; mid-stream failures terminate the response so clients can reauthorize/retry.
+
+### Tests and implementation
+
+Sources are under `src/songs/` (module, thin controller, service, DTOs, playback ticket service/guard) and `src/media/cloudinary-audio.gateway.ts`. The new Sequelize migration is `005-song-media-assets`.
+
+```sh
+npm run typecheck
+npm test
+npm run build
+# Apply migrations to a dedicated test database, then set TEST_DATABASE_URL securely:
+npm run test:songs:db
+```
+
+Tests cover song creation, missing/mismatched artists/albums, ownership and concurrent reuse, search/filter/pagination/sorting, unauthorized writes, safe DTOs, cleanup on replacement/deletion, real ticket expiry/signature separation, wrong-song tokens, suspension, redirect/JSON browser flow, Range/HEAD forwarding, and provider failures. PostgreSQL integration uses real JWT auth, transactions, tracking, and streaming controller code while replacing Cloudinary upload/delivery with test doubles. Live Cloudinary delivery is not claimed without credentials.
+
+## Song lyrics
+
+ADMIN users may include optional `lyrics` in `POST /api/v1/songs` or update it through the existing `PATCH /api/v1/songs/:id` endpoint:
+
+```json
+{
+  "lyrics": "Amazing grace, how sweet the sound\nThat saved a wretch like me\n\nI once was lost, but now am found"
+}
+```
+
+Lyrics are plain text, limited to 50,000 characters. Line breaks, Unicode, and surrounding whitespace are preserved exactly; the backend does not interpret HTML or apply title-style normalization. Null characters and non-string values are rejected with `400`. The existing overall JSON request-body size limit also applies. An omitted field leaves current lyrics unchanged on PATCH; `null` clears lyrics; an empty string is accepted as explicit empty text. Creation without lyrics stores null.
+
+Authenticated ACTIVE members can read lyrics through `GET /api/v1/songs/:id`. Creation/update responses also include lyrics via `SongDetailResponseDto`. Paginated lists use `SongResponseDto` without lyrics and exclude the text column from their database query. Playback queries also exclude lyrics. No new endpoints or permissions are introduced, and audio playback behavior is unchanged.
+
+Apply Sequelize migration `006-song-lyrics` before restarting the API:
+
+```sh
+npm run db:migrate
+npm run start:dev
+```
+
+The migration adds nullable PostgreSQL TEXT with a 50,000-character check; existing songs receive null. Its rollback drops the column and therefore removes stored lyrics. Swagger documents the nullable field and detail response. Frontend consumers should render it as text and preserve line breaks (for example, `white-space: pre-wrap`), without rendering raw HTML.
+
+Service/HTTP tests in `npm test` cover storing, reading, preserving, clearing, invalid types/length, permission checks, and list omission. `npm run test:songs:db` verifies the same persistence behavior against a dedicated migrated PostgreSQL database, including exact multiline/Unicode preservation.
+
+## Playlists
+
+Run `npm run db:migrate` before starting the updated application. Migration
+`007-playlist-publication` adds `publicationStatus` (`DRAFT` / `PUBLISHED`),
+visibility indexing, and a constraint keeping personal playlists private. Existing
+playlists default to `DRAFT`; rehearsal playlists must be explicitly published.
+This application uses Sequelize, including transactions for playlist writes.
+
+All eight playlist endpoints under `/api/v1/playlists` require a JWT from login.
+Use **Authorize** at `/api/docs` to try them. Members and administrators can manage
+their own PERSONAL playlists. Personal playlists are private to their owner,
+including against other administrators. Any active administrator can manage
+REHEARSAL playlists. Members can read published rehearsal playlists but cannot
+modify them. Draft rehearsals are visible only to administrators.
+
+Create a personal playlist with `POST /api/v1/playlists`:
+
+```json
+{ "title": "My practice", "type": "PERSONAL", "description": "Weekly practice" }
+```
+
+An administrator can create a rehearsal playlist with:
+
+```json
+{ "title": "Sunday worship", "type": "REHEARSAL", "publicationStatus": "DRAFT" }
+```
+
+Publish or unpublish using `PATCH /api/v1/playlists/:id` with
+`{"publicationStatus":"PUBLISHED"}` or `{"publicationStatus":"DRAFT"}`.
+Personal playlists do not accept a publication status. Owner and type cannot be
+changed. Metadata updates accept `title` and `description` (null clears description).
+
+- `GET /api/v1/playlists?page=1&limit=20&type=REHEARSAL&publicationStatus=PUBLISHED`
+  returns only visible playlists with pagination totals. Limit is 1–100.
+- `GET /api/v1/playlists/:id` includes ordered songs with safe title, artist,
+  duration and category metadata; audio provider identifiers are not returned.
+- `POST /api/v1/playlists/:id/songs` accepts `{"songIds":["<song-uuid>"]}`.
+  Add 1–100 existing songs per request, up to 1000 per playlist. Order follows the
+  submitted array. Missing or duplicate songs reject the entire batch.
+- `PATCH /api/v1/playlists/:id/songs/reorder` accepts the same shape containing
+  **every current song ID exactly once**, in the desired order. Empty lists are
+  valid only for empty playlists. Refresh and retry after a stale-set 409.
+- `DELETE /api/v1/playlists/:id/songs/:songId` removes the entry and compacts
+  remaining positions, returning updated playlist details.
+- `DELETE /api/v1/playlists/:id` returns 204. A playlist referenced by a rehearsal
+  event returns 409. Removing entries or playlists never deletes songs or media.
+
+Writes lock the parent playlist and run in a Sequelize transaction. Reordering
+uses temporary positive positions followed by final zero-based positions, keeping
+entry IDs and timestamps while respecting immediate unique constraints. Invalid
+requests return 400, unauthenticated requests 401, denied permissions 403, missing
+resources 404, and conflicts 409.
+
+Run `npm test` for unit/HTTP tests. Against a dedicated migrated test database:
+
+```sh
+TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/TEST_DATABASE npm run test:playlists:db
+```
+
+The PostgreSQL suite exercises real JWT authentication, ownership, rehearsal
+publication, pagination, batch validation, duplicate races, ordering and deletion.
+
+## Rehearsals
+
+The Rehearsals module uses the existing database schema. Apply pending migrations
+with `npm run db:migrate`, then start the server normally. All endpoints require
+an active account and JWT; write operations require ADMIN in both guards and the
+service. Try the **Rehearsals** tag at `/api/docs` after using **Authorize**.
+
+Create with `POST /api/v1/rehearsals`:
+
+```json
+{
+  "title": "Sunday choir practice",
+  "description": "Practice opening worship songs",
+  "scheduledAt": "2026-11-15T17:00:00+01:00",
+  "playlistId": "<existing-rehearsal-playlist-uuid>"
+}
+```
+
+`scheduledAt` combines the rehearsal date and time. It must include seconds and
+`Z` or an explicit UTC offset; timezone-free values are rejected. For example,
+17:00 in Lagos (`+01:00`) is stored and returned as `2026-11-15T16:00:00.000Z`.
+All response timestamps use UTC ISO 8601. The client can display these timestamps
+in the viewer's timezone. This schedules a single event, with no recurrence.
+
+- `GET /api/v1/rehearsals?page=1&limit=20&period=upcoming` returns upcoming
+  rehearsals (`scheduledAt >= now`), soonest first. `period=past` returns past
+  rehearsals (`scheduledAt < now`), newest first. Omit period for all visible
+  rehearsals, soonest first. Pagination limits are 1–100; ties use rehearsal ID.
+- `GET /api/v1/rehearsals/:id` includes the associated playlist and songs in
+  playlist order. Song metadata excludes Cloudinary audio identifiers and URLs;
+  use the existing secure song playback endpoint to listen.
+- `PATCH /api/v1/rehearsals/:id` accepts title, description, scheduledAt and/or
+  playlistId. Null clears description. Empty updates and owner changes are rejected.
+- `DELETE /api/v1/rehearsals/:id` returns 204 and preserves the playlist, songs
+  and media.
+
+The associated playlist must exist and have type `REHEARSAL`; missing playlists
+return 404 and PERSONAL playlists return 400. Admins can schedule against drafts.
+A rehearsal's publication follows its playlist: publish through the existing
+playlist endpoint (`PATCH /api/v1/playlists/:id` with
+`{"publicationStatus":"PUBLISHED"}`). Members see only rehearsals associated
+with published rehearsal playlists, including in pagination totals. Draft or
+otherwise unavailable rehearsal details return 404. Unpublishing a playlist hides
+all linked rehearsals from members; replacing the linked playlist adopts the new
+playlist's visibility. No separate rehearsal publication flag is introduced.
+
+Run `npm test` for service and existing HTTP tests. Real PostgreSQL HTTP tests:
+
+```sh
+TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/TEST_DATABASE npm run test:rehearsals:db
+```
+
+Use a dedicated migrated test database. The suite checks JWT/role authorization,
+validation, UTC conversion, playlist references, publication changes, pagination,
+ordered songs, updates, safe deletion and Swagger metadata. Notifications and
+attendance are not implemented.
+
+## Test and security audit
+
+See [the backend audit report](docs/backend-audit.md) for the coverage map,
+executed results, test commands, Swagger browser check, and unresolved findings.
+Before starting this version, run `npm run db:migrate` to apply migration
+`008-auth-rate-limit`. Login and registration now use shared PostgreSQL attempt
+limits; configuration defaults are in `.env.example`. Requests over the limit
+receive 429 with `Retry-After`; unavailable limiter storage returns 503.
+
+For a dedicated migrated test database, set `TEST_DATABASE_URL` and run
+`npm run test:all` for TypeScript, Jest, and all PostgreSQL integration suites.
+Use `npm run test:security:db` for the new registration-to-playback workflow and
+shared rate-limit tests. Never use a production database for test fixtures.

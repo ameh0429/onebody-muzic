@@ -25,7 +25,14 @@
     "test:auth:db": "npm run build && tsx --test test/auth.database.integration.ts",
     "test:users:db": "npm run build && tsx --test test/users.database.integration.ts",
     "test:artists:db": "npm run build && tsx --test test/artists.database.integration.ts",
-    "test:albums:db": "npm run build && tsx --test test/albums.database.integration.ts"
+    "test:albums:db": "npm run build && tsx --test test/albums.database.integration.ts",
+    "test:media:db": "npm run build && tsx --test test/media.database.integration.ts",
+    "test:songs:db": "npm run build && tsx --test test/songs.database.integration.ts",
+    "test:playlists:db": "npm run build && tsx --test test/playlists.database.integration.ts",
+    "test:rehearsals:db": "npm run build && tsx --test test/rehearsals.database.integration.ts",
+    "test:security:db": "npm run build && tsx --test test/security.database.integration.ts",
+    "test:integration": "npm run build && tsx --test --test-concurrency=1 test/*.integration.ts",
+    "test:all": "npm run typecheck && npm test && npm run test:integration"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",
@@ -39,8 +46,12 @@
     "argon2": "0.45.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cloudinary": "2.11.0",
     "dotenv": "18.0.9",
     "helmet": "^8.3.0",
+    "https-proxy-agent": "7.0.6",
+    "magic-bytes.js": "1.13.1",
+    "multer": "2.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "8.23.1",
@@ -57,6 +68,7 @@
     "@nestjs/testing": "^11.2.8",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
+    "@types/multer": "^2.3.0",
     "@types/node": "^26.6.6",
     "@types/passport": "^1.0.17",
     "@types/passport-jwt": "^4.0.1",
@@ -68,5 +80,8 @@
     "ts-jest": "^29.4.15",
     "tsx": "4.23.15",
     "typescript": "~5.9"
+  },
+  "overrides": {
+    "multer": "$multer"
   }
 }
