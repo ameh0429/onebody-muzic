@@ -718,3 +718,65 @@ npm run start:dev
 The migration adds nullable PostgreSQL TEXT with a 50,000-character check; existing songs receive null. Its rollback drops the column and therefore removes stored lyrics. Swagger documents the nullable field and detail response. Frontend consumers should render it as text and preserve line breaks (for example, `white-space: pre-wrap`), without rendering raw HTML.
 
 Service/HTTP tests in `npm test` cover storing, reading, preserving, clearing, invalid types/length, permission checks, and list omission. `npm run test:songs:db` verifies the same persistence behavior against a dedicated migrated PostgreSQL database, including exact multiline/Unicode preservation.
+
+## Playlists
+
+Run `npm run db:migrate` before starting the updated application. Migration
+`007-playlist-publication` adds `publicationStatus` (`DRAFT` / `PUBLISHED`),
+visibility indexing, and a constraint keeping personal playlists private. Existing
+playlists default to `DRAFT`; rehearsal playlists must be explicitly published.
+This application uses Sequelize, including transactions for playlist writes.
+
+All eight playlist endpoints under `/api/v1/playlists` require a JWT from login.
+Use **Authorize** at `/api/docs` to try them. Members and administrators can manage
+their own PERSONAL playlists. Personal playlists are private to their owner,
+including against other administrators. Any active administrator can manage
+REHEARSAL playlists. Members can read published rehearsal playlists but cannot
+modify them. Draft rehearsals are visible only to administrators.
+
+Create a personal playlist with `POST /api/v1/playlists`:
+
+```json
+{ "title": "My practice", "type": "PERSONAL", "description": "Weekly practice" }
+```
+
+An administrator can create a rehearsal playlist with:
+
+```json
+{ "title": "Sunday worship", "type": "REHEARSAL", "publicationStatus": "DRAFT" }
+```
+
+Publish or unpublish using `PATCH /api/v1/playlists/:id` with
+`{"publicationStatus":"PUBLISHED"}` or `{"publicationStatus":"DRAFT"}`.
+Personal playlists do not accept a publication status. Owner and type cannot be
+changed. Metadata updates accept `title` and `description` (null clears description).
+
+- `GET /api/v1/playlists?page=1&limit=20&type=REHEARSAL&publicationStatus=PUBLISHED`
+  returns only visible playlists with pagination totals. Limit is 1–100.
+- `GET /api/v1/playlists/:id` includes ordered songs with safe title, artist,
+  duration and category metadata; audio provider identifiers are not returned.
+- `POST /api/v1/playlists/:id/songs` accepts `{"songIds":["<song-uuid>"]}`.
+  Add 1–100 existing songs per request, up to 1000 per playlist. Order follows the
+  submitted array. Missing or duplicate songs reject the entire batch.
+- `PATCH /api/v1/playlists/:id/songs/reorder` accepts the same shape containing
+  **every current song ID exactly once**, in the desired order. Empty lists are
+  valid only for empty playlists. Refresh and retry after a stale-set 409.
+- `DELETE /api/v1/playlists/:id/songs/:songId` removes the entry and compacts
+  remaining positions, returning updated playlist details.
+- `DELETE /api/v1/playlists/:id` returns 204. A playlist referenced by a rehearsal
+  event returns 409. Removing entries or playlists never deletes songs or media.
+
+Writes lock the parent playlist and run in a Sequelize transaction. Reordering
+uses temporary positive positions followed by final zero-based positions, keeping
+entry IDs and timestamps while respecting immediate unique constraints. Invalid
+requests return 400, unauthenticated requests 401, denied permissions 403, missing
+resources 404, and conflicts 409.
+
+Run `npm test` for unit/HTTP tests. Against a dedicated migrated test database:
+
+```sh
+TEST_DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/TEST_DATABASE npm run test:playlists:db
+```
+
+The PostgreSQL suite exercises real JWT authentication, ownership, rehearsal
+publication, pagination, batch validation, duplicate races, ordering and deletion.

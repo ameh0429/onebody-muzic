@@ -5,6 +5,7 @@ import { up as albumsUp, down as albumsDown } from './migrations/003-album-const
 import { up as mediaUp, down as mediaDown } from './migrations/004-media-assets';
 import { up as songsUp, down as songsDown } from './migrations/005-song-media-assets';
 import { up as lyricsUp, down as lyricsDown } from './migrations/006-song-lyrics';
+import { up as playlistsUp, down as playlistsDown } from './migrations/007-playlist-publication';
 import { up, down } from './migrations/001-initial-schema';
 
 export function createMigrator(database: Sequelize): Umzug<Sequelize> {
@@ -34,6 +35,10 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       name: '006-song-lyrics',
       up: ({ context }) => lyricsUp(context),
       down: ({ context }) => lyricsDown(context),
+    }, {
+      name: '007-playlist-publication',
+      up: ({ context }) => playlistsUp(context),
+      down: ({ context }) => playlistsDown(context),
     }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,

@@ -3,6 +3,7 @@ import { AllowNull, BelongsTo, Column, DataType, Default, DefaultScope, ForeignK
 
 export enum Role { ADMIN = 'ADMIN', MEMBER = 'MEMBER' }
 export enum UserStatus { PENDING = 'PENDING', ACTIVE = 'ACTIVE', SUSPENDED = 'SUSPENDED' }
+export enum PlaylistPublicationStatus { DRAFT = 'DRAFT', PUBLISHED = 'PUBLISHED' }
 export enum PlaylistType { PERSONAL = 'PERSONAL', REHEARSAL = 'REHEARSAL' }
 
 @DefaultScope(() => ({ attributes: { exclude: ['passwordHash'] } }))
@@ -237,6 +238,11 @@ export class Playlist extends Model<InferAttributes<Playlist>, InferCreationAttr
   @Default(PlaylistType.PERSONAL)
   @Column(DataType.ENUM(...Object.values(PlaylistType)))
   declare type: CreationOptional<PlaylistType>;
+
+  @AllowNull(false)
+  @Default(PlaylistPublicationStatus.DRAFT)
+  @Column(DataType.ENUM(...Object.values(PlaylistPublicationStatus)))
+  declare publicationStatus: CreationOptional<PlaylistPublicationStatus>;
 
   @ForeignKey(() => User)
   @AllowNull(false)

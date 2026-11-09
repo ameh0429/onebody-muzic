@@ -27,7 +27,8 @@
     "test:artists:db": "npm run build && tsx --test test/artists.database.integration.ts",
     "test:albums:db": "npm run build && tsx --test test/albums.database.integration.ts",
     "test:media:db": "npm run build && tsx --test test/media.database.integration.ts",
-    "test:songs:db": "npm run build && tsx --test test/songs.database.integration.ts"
+    "test:songs:db": "npm run build && tsx --test test/songs.database.integration.ts",
+    "test:playlists:db": "npm run build && tsx --test test/playlists.database.integration.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",

@@ -1,3 +1,4 @@
+import { PlaylistsService } from '../src/playlists/playlists.service';
 import { SongsService } from '../src/songs/songs.service';
 import { MediaModule } from '../src/media/media.module';
 import { AlbumsService } from '../src/albums/albums.service';
@@ -58,7 +59,7 @@ describe('API foundation', () => {
     process.env.DATABASE_URL ??= 'postgresql://localhost/onebodymusic_test';
     process.env.CORS_ALLOWED_ORIGINS = 'http://localhost:5173';
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(SongsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
+    const module = await Test.createTestingModule({ imports: [AppModule, ProbeModule] }).overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule).overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(SongsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(AuthRepository).useValue({}).compile();
     app = module.createNestApplication();
     configureApp(app);
     await app.init();
