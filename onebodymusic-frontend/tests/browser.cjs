@@ -92,7 +92,13 @@ async function main() {
   await page.getByRole('button',{name:'Pause audio',exact:true}).click();
   await page.getByRole('button',{name:'Refresh playback access',exact:true}).click();
   await page.waitForFunction(()=>new URL(document.querySelector('audio').src).searchParams.get('ticket')==='controlled-browser-ticket-4');
-  await page.getByLabel('Playback position',{exact:true}).fill('5');
+  assert.equal(await page.getByLabel('Playback position',{exact:true}).count(),0);
+  assert.equal(await page.locator('audio[controls]').count(),1);
+  await page.getByRole('button',{name:'Play audio',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('audio').readyState>=2&&!document.querySelector('audio').paused);
+  await page.getByRole('button',{name:'Pause audio',exact:true}).click();
+  await page.locator('audio').evaluate(el=>{el.currentTime=5;});
+  await page.waitForFunction(()=>!document.querySelector('audio').seeking);
   await page.getByRole('button',{name:'Play audio',exact:true}).click();
   await page.waitForFunction(()=>{const a=document.querySelector('audio');return !a.paused&&!a.seeking&&a.currentTime>=5;});
   assert.ok(await page.locator('audio').evaluate(el=>el.currentTime)<7);

@@ -30,9 +30,7 @@
 .player-title { flex:1; min-width:100px; overflow:hidden; }
 .player-title a { min-height:44px; display:flex; justify-content:center; flex-direction:column; }
 .player-title strong,.player-title span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.player-title strong { font-size:.85rem; }.player-title span,.player-time { font-size:.72rem; color:var(--muted); }
-.player-seek { flex:1 1 150px; font-size:.65rem; gap:0; }
-.player-seek input { min-height:32px; padding:0; accent-color:var(--accent); }
+.player-title strong { font-size:.85rem; }.player-title span { font-size:.72rem; color:var(--muted); }
 .player-native { width:100%; height:40px; }
 .player-error { width:100%; margin:0; font-size:.8rem; color:var(--ink); }
 .has-player .main-content { padding-bottom:340px; }.has-player .pwa-prompt { bottom:340px; }

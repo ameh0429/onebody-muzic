@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Pause, Play, RotateCw, X } from 'lucide-react';
 import { api, message, playbackUrl } from '../../lib/api';
 import type { Song } from '../../lib/types';
-import { duration } from '../../components/ui';
 
 interface Player {
   song: Song | null; busy: boolean; error: string;
@@ -89,8 +88,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     <section className="mini-player" aria-label="Now playing" hidden={!song}>
       {song && <><div className="player-title"><Link to={`/songs/${song.id}`}><strong>{song.title}</strong><span>{song.artist.name}</span></Link></div>
         <button className="icon-btn" aria-label={playing ? 'Pause audio' : 'Play audio'} disabled={busy} onClick={() => void toggle()}>{playing ? <Pause size={20}/> : <Play size={20}/>}</button>
-        <label className="player-seek">Playback position<input type="range" min={0} max={length || song.durationSeconds || 0} step={1} value={Math.min(time, length || song.durationSeconds || 0)} disabled={busy || !length} onChange={(e) => seek(Number(e.target.value))}/></label>
-        <span className="player-time">{duration(Math.floor(time))} / {duration(Math.floor(length || song.durationSeconds || 0))}</span>
         <button className="icon-btn" aria-label="Refresh playback access" disabled={busy} onClick={() => { retried.current = false; void prepare(song, playing, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); }}><RotateCw size={18}/></button>
         <button className="icon-btn" aria-label="Close player" onClick={stop}><X size={20}/></button></>}
       <audio ref={audio} crossOrigin="anonymous" controls preload="none" className="player-native" aria-label="Audio player"
