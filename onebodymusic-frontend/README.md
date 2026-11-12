@@ -263,3 +263,25 @@ Helmetâ€™s `Cross-Origin-Resource-Policy: same-origin` protection. The backendâ€
 the backend after changing that setting. Playback still uses song-scoped tickets;
 no cookies or access JWTs are sent by the audio element. A 206 alone does not
 confirm that the browser accepted the response or decoded the media.
+
+### Persistent playback
+
+**Load audio** on a song opens the shared player. Press Play in that player; it
+stays mounted while navigating between songs, artists, albums, playlists and other
+pages. Loading another song replaces the current one. The mini-player offers
+play/pause, seeking, position, refresh and close controls, plus native audio
+controls for browser compatibility. Refreshing playback access preserves the
+current position and resumes if it was playing. An expired ticket is renewed on
+resume/seek; an already authorized active stream is not restarted just because
+its ticket expires. Closing the player or signing out stops playback, removes
+the audio source and clears Media Session metadata. Requests finishing after
+close/logout cannot restore a stopped player.
+
+Supported browsers expose the title, artist, artwork and play/pause/seek/stop
+controls through Media Session (including lock-screen controls where available).
+The app does not pause just because its page becomes hidden. Background playback
+still depends on the browser, operating system, battery settings and account
+session remaining valid. A PWA does not guarantee uninterrupted playback while
+minimized; test on the target phone. Reloading or closing the app stops playback
+and clears the in-memory session. No audio, playback ticket or player session is
+persisted for offline use.

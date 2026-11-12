@@ -25,3 +25,18 @@
 .profile-picture-actions { display:flex; flex-wrap:wrap; gap:10px; }
 
 .artist-photo-preview { display:block; width:128px; max-width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px; }
+.mini-player { position:fixed; z-index:50; left:12px; right:12px; bottom:calc(82px + env(safe-area-inset-bottom)); display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:14px; box-shadow:0 4px 25px #0003; }
+.mini-player[hidden] { display:none; }
+.player-title { flex:1; min-width:100px; overflow:hidden; }
+.player-title a { min-height:44px; display:flex; justify-content:center; flex-direction:column; }
+.player-title strong,.player-title span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.player-title strong { font-size:.85rem; }.player-title span,.player-time { font-size:.72rem; color:var(--muted); }
+.player-seek { flex:1 1 150px; font-size:.65rem; gap:0; }
+.player-seek input { min-height:32px; padding:0; accent-color:var(--accent); }
+.player-native { width:100%; height:40px; }
+.player-error { width:100%; margin:0; font-size:.8rem; color:var(--ink); }
+.has-player .main-content { padding-bottom:340px; }.has-player .pwa-prompt { bottom:340px; }
+@media(min-width:1024px) { .mini-player { left:265px; right:24px; bottom:20px; }.has-player .main-content { padding-bottom:230px; }.has-player .pwa-prompt { bottom:230px; } }
+
+.player-title { flex:1 1 calc(100% - 70px); }
+@media(min-width:1024px) { .player-title { flex:1; min-width:160px; } }
