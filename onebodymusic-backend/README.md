@@ -924,3 +924,30 @@ The frontend's `VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` defaults to 120 seconds. If y
 increase the backend deadline, set the frontend deadline at least 30 seconds higher
 and adjust any reverse-proxy timeout. Restart NestJS after `.env` changes and
 restart/rebuild Vite after `VITE_*` changes. This fix needs no database migration.
+
+### Credentials pass but playback returns 502
+
+The Admin API ping checks a different path from authenticated CDN delivery. For a
+specific song, run this read-only check from the backend directory:
+
+```sh
+npm run media:check -- --song YOUR_SONG_UUID
+```
+
+It looks up the tracked READY audio and checks the same signed original URL used
+by the gateway with HEAD and a one-byte GET range. No account, song, or media
+records are changed. Each request has a 15-second deadline. Signed URLs, tickets,
+credentials and raw provider errors are not printed. The backend also logs these
+safe delivery diagnostics during ordinary playback:
+
+- `PROVIDER_HTTP` with `providerStatus=401/403`: the CDN rejected delivery; check
+  the Cloudinary product environment, authenticated resource and signing/account permissions.
+- `PROVIDER_HTTP` with `providerStatus=404`: verify the tracked audio still exists
+  under the stored namespace and authenticated video delivery type.
+- `RANGE_IGNORED`: the upstream returned a full response to a range request.
+- `INVALID_RANGE_OR_LENGTH`: provider range/size metadata disagrees with tracked audio.
+- `TLS`, `CONNECTION`, `TIMEOUT`: check the backend machine’s trust configuration,
+  outbound access to `res.cloudinary.com`, DNS and HTTPS proxy. Keep TLS verification enabled.
+
+Do not change ticket expiry to repair provider delivery errors. A successful song
+check verifies access and range headers, but does not establish browser codec support.
