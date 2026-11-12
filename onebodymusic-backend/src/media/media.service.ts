@@ -14,7 +14,7 @@ export class MediaService {
   private readonly logger = new Logger(MediaService.name);
   constructor(private readonly repository: MediaRepository, private readonly cloudinary: CloudinaryClient, private readonly inspector: FileInspector) {}
 
-  async upload(file: Express.Multer.File | undefined, kind: MediaKind, ownerId: string, destination?: ImageFolder): Promise<MediaResponseDto> {
+  async upload(file: Express.Multer.File | undefined, kind: MediaKind, ownerId: string, destination?: ImageFolder | 'profiles'): Promise<MediaResponseDto> {
     if (!this.cloudinary.configured()) throw new ServiceUnavailableException('Cloudinary media is not configured');
     const inspection = await this.inspector.inspect(file, kind);
     const id = randomUUID(); const folder = `onebodymusic/${kind === MediaKind.AUDIO ? 'audio' : destination}`;

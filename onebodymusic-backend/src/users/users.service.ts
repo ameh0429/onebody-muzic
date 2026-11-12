@@ -71,6 +71,7 @@ export class UsersService {
   private sanitize(user: User): UserResponseDto {
     return {
       id: user.id, name: user.name, email: user.email, role: user.role, status: user.status,
+      profileImageUrl: user.profileImageUrl ?? null,
       createdAt: user.createdAt.toISOString(), updatedAt: user.updatedAt.toISOString(),
     };
   }

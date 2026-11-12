@@ -213,3 +213,18 @@ Default request deadline is 120 seconds; configure
 `VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` at least 30 seconds above the backend upload
 deadline. Restart/rebuild after changing Vite environment variables. See the backend
 README troubleshooting section for local Windows networking, credentials and TLS.
+
+### Profile pictures
+
+On Profile, choose a JPEG, PNG or WebP image, review the preview, and select
+**Upload picture** (or **Replace picture**). **Cancel selection** keeps the saved
+picture, and **Remove picture** restores your initial avatar. The saved picture
+appears on Profile and in the header/sidebar, including after signing in again.
+Broken image links fall back to your initial. The default size limit is 5 MiB;
+`VITE_IMAGE_MAX_BYTES` should match the backend limit. Pictures use public image
+links. Uploads require the backend profile-picture migration and Cloudinary setup.
+
+The browser workflow also checks picture validation, preview/cancellation, upload,
+shared avatar updates and removal using controlled provider responses. Backend
+integration tests exercise the real API, database, ownership and cleanup with a
+provider test double; live Cloudinary uploads need provider credentials.

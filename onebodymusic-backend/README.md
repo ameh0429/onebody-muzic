@@ -269,6 +269,29 @@ npm run test:auth:db
 
 This command builds and starts a temporary compiled API against the test database, verifies persisted hashing, normalized email races, login, current profile, suspension and deletion revocation, then removes only uniquely named fixtures and stops its server. Never use a production database. Existing `npm run test:db` checks remain available. No schema migration is needed for authentication because the User fields already exist.
 
+## Profile pictures
+
+After updating the backend, run `npm run db:migrate` (or `npm run db:migrate:prod`
+for compiled deployments) before restarting it. Migration `009-user-profile-picture`
+adds nullable user picture fields, a tracked media reference, and the fixed
+`onebodymusic/profiles` image namespace. Existing accounts keep their initial avatar.
+
+Active members and administrators can `POST /api/v1/users/me/picture` with a
+multipart `file` field to upload/replace their own picture, and
+`DELETE /api/v1/users/me/picture` to remove it. Both return the sanitized user,
+including nullable `profileImageUrl`; login and `/auth/me` return the same field.
+No target user ID, provider URL, storage key, or destination is accepted from the client.
+JPEG, PNG and WebP use the existing image MIME/signature/extension validation,
+`MEDIA_IMAGE_MAX_BYTES` limit (5 MiB by default), upload capacity and deadline.
+Cloudinary configuration and `MEDIA_ENABLED=true` are required for uploads.
+Removing an existing picture works even while uploads are disabled.
+
+Pictures use public Cloudinary image delivery: they are not private authenticated
+media. Old pictures are queued for the existing cleanup worker after replacement
+or removal; active pictures are excluded from staged-upload expiry. Failed uploads
+preserve the previous picture. Database guards protect ownership/readiness and
+prevent cleanup of a referenced profile image. Keep the media worker running.
+
 ## User management
 
 All user management endpoints require a bearer JWT and a currently ACTIVE account. They appear under **Users** in Swagger. No schema migration is required for this module.

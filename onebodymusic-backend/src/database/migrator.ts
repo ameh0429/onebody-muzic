@@ -1,3 +1,4 @@
+import { up as profilePictureUp, down as profilePictureDown } from './migrations/009-user-profile-picture';
 import { up as rateLimitUp, down as rateLimitDown } from './migrations/008-auth-rate-limit';
 import { Sequelize } from 'sequelize-typescript';
 import { SequelizeStorage, Umzug } from 'umzug';
@@ -44,6 +45,10 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       name: '008-auth-rate-limit',
       up: ({ context }) => rateLimitUp(context),
       down: ({ context }) => rateLimitDown(context),
+    }, {
+      name: '009-user-profile-picture',
+      up: ({ context }) => profilePictureUp(context),
+      down: ({ context }) => profilePictureDown(context),
     }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,

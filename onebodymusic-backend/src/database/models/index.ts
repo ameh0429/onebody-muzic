@@ -42,6 +42,14 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   @Column(DataType.DATE(3))
   declare updatedAt: CreationOptional<Date>;
 
+  @AllowNull(true)
+  @Column(DataType.TEXT)
+  declare profileImageUrl: string | null;
+
+  @AllowNull(true)
+  @Column(DataType.UUID)
+  declare profileImageAssetId: string | null;
+
   @HasMany(() => Song, 'uploadedById')
   declare uploadedSongs: NonAttribute<Song[]>;
 

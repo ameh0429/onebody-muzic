@@ -1,3 +1,4 @@
+import { ProfilePictureService } from '../src/media/profile-picture.service';
 import { CloudinaryOperationError } from '../src/media/errors/media-operation.error';
 import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
 import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
@@ -44,7 +45,7 @@ describe('Admin multipart media uploads', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue({})
-      .overrideProvider(MediaRepository).useValue(repository).overrideProvider(CloudinaryClient).useValue(provider).overrideProvider(MediaCleanupWorker).useValue({}).compile();
+      .overrideProvider(ProfilePictureService).useValue({}).overrideProvider(MediaRepository).useValue(repository).overrideProvider(CloudinaryClient).useValue(provider).overrideProvider(MediaCleanupWorker).useValue({}).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();
     jwt = new JwtService({ secret: process.env.JWT_SECRET, signOptions: { issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: 'HS256', expiresIn: 900 } });
   });

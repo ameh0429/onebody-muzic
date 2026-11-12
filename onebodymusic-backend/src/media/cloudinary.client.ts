@@ -16,7 +16,7 @@ export class CloudinaryClient {
   }
   private options(asset: MediaAsset): UploadApiOptions {
     if (!this.configured()) throw new ServiceUnavailableException('Cloudinary media is not configured');
-    if (!['onebodymusic/audio', 'onebodymusic/artists', 'onebodymusic/albums', 'onebodymusic/songs'].includes(asset.folder) || asset.publicId !== `${asset.folder}/${asset.id}` || (asset.kind === MediaKind.AUDIO ? asset.resourceType !== 'video' || asset.deliveryType !== 'authenticated' : asset.resourceType !== 'image' || asset.deliveryType !== 'upload')) throw new ServiceUnavailableException('Invalid media storage record');
+    if (!['onebodymusic/audio', 'onebodymusic/artists', 'onebodymusic/albums', 'onebodymusic/songs', 'onebodymusic/profiles'].includes(asset.folder) || asset.publicId !== `${asset.folder}/${asset.id}` || (asset.kind === MediaKind.AUDIO ? asset.resourceType !== 'video' || asset.deliveryType !== 'authenticated' : asset.resourceType !== 'image' || asset.deliveryType !== 'upload')) throw new ServiceUnavailableException('Invalid media storage record');
     return {
       cloud_name: this.config.get('CLOUDINARY_CLOUD_NAME', { infer: true }),
       api_key: this.config.get('CLOUDINARY_API_KEY', { infer: true }),

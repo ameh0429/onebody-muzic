@@ -17,3 +17,9 @@
 .main-content { padding-left:max(20px,env(safe-area-inset-left)); padding-right:max(20px,env(safe-area-inset-right)); }
 @media(min-width:640px) { .main-content { padding-left:max(32px,env(safe-area-inset-left)); padding-right:max(32px,env(safe-area-inset-right)); } }
 @media(min-width:1024px) { .main-content { padding-left:45px; padding-right:45px; } }
+.avatar,.profile-avatar { overflow:hidden; flex-shrink:0; }
+.avatar img,.profile-avatar img { width:100%; height:100%; object-fit:cover; }
+.avatar-link { min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; }
+.profile-avatar { font-size:1.8rem; font-weight:650; }
+.profile-picture-form { padding-bottom:24px; margin-bottom:24px; border-bottom:1px solid var(--line); }
+.profile-picture-actions { display:flex; flex-wrap:wrap; gap:10px; }
