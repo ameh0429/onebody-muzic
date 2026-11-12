@@ -16,7 +16,7 @@ if (!url) throw new Error('TEST_DATABASE_URL must point to a dedicated migrated 
 async function port() { const socket = createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening'); const n = socket.address().port; await new Promise((r) => socket.close(r)); return n; }
 async function ready(url) { for (let i = 0; i < 100; i++) { try { if ((await fetch(url)).ok) return; } catch {} await delay(100); } throw new Error('Server did not start'); }
 async function main() {
- const uploadedArtistAssets=[]; const extraArtistIds=[]; const db = createDatabase(url); const processes = []; let browser; let page; const suffix = randomUUID(); const emails = ['admin','member','new'].map((s) => `frontend-${s}-${suffix}@example.org`); const password = randomBytes(24).toString('hex'); let artist; let album; let songs = []; const checks = [];
+ const uploadedArtistAssets=[]; const extraArtistIds=[]; const extraAlbumIds=[]; const db = createDatabase(url); const processes = []; let browser; let page; const suffix = randomUUID(); const emails = ['admin','member','new'].map((s) => `frontend-${s}-${suffix}@example.org`); const password = randomBytes(24).toString('hex'); let artist; let album; let songs = []; const checks = [];
  try {
   await db.authenticate(); const passwordHash = await hash(password);
   const admin = await User.create({name:'Grace Admin',email:emails[0],passwordHash,role:Role.ADMIN,status:UserStatus.ACTIVE});
@@ -95,9 +95,9 @@ async function main() {
   const artistPhotoAssets=[];
   await page.route('https://res.cloudinary.com/frontend-artist-test/**',r=>r.fulfill({status:200,contentType:'image/png',body:photoBytes}));
   await page.route('**/api/v1/media/images',async r=>{
-    assert.ok(r.request().postDataBuffer().includes(Buffer.from('artists')));
-    const id=randomUUID(); const publicId=`onebodymusic/artists/${id}`;
-    const asset=await MediaAsset.create({id,kind:MediaKind.IMAGE,status:MediaStatus.READY,folder:'onebodymusic/artists',publicId,resourceType:'image',deliveryType:'upload',format:'png',mimeType:'image/png',bytes:photoBytes.length,duration:null,width:1,height:1,uploadedById:admin.id});
+    const folder=r.request().postDataBuffer().includes(Buffer.from('albums'))?'albums':'artists';
+    const id=randomUUID(); const publicId=`onebodymusic/${folder}/${id}`;
+    const asset=await MediaAsset.create({id,kind:MediaKind.IMAGE,status:MediaStatus.READY,folder:`onebodymusic/${folder}`,publicId,resourceType:'image',deliveryType:'upload',format:'png',mimeType:'image/png',bytes:photoBytes.length,duration:null,width:1,height:1,uploadedById:admin.id});
     uploadedArtistAssets.push(id);artistPhotoAssets.push(id);
     await r.fulfill({status:201,contentType:'application/json',body:JSON.stringify({id,status:'READY',url:`https://res.cloudinary.com/frontend-artist-test/image/upload/${publicId}.png`,publicId})});
   });
@@ -131,6 +131,32 @@ async function main() {
   await newArtistForm.getByRole('button',{name:'Create artist',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Artist name is already in use'}).waitFor();
   assert.equal((await MediaAsset.findByPk(artistPhotoAssets[2])).status,MediaStatus.DELETED);
+  await page.getByText('+ Create an album',{exact:true}).click();
+  const albumForm=page.locator('form').filter({has:page.getByRole('button',{name:'Create album',exact:true})});
+  const coverAlbumTitle=`Cover Album ${suffix}`;
+  await albumForm.getByLabel('Album title',{exact:true}).fill(coverAlbumTitle);
+  await albumForm.getByLabel('Album cover (optional)',{exact:true}).setInputFiles({name:'invalid.txt',mimeType:'text/plain',buffer:Buffer.from('invalid')});
+  assert.equal(await albumForm.getByRole('button',{name:'Create album',exact:true}).isDisabled(),true);
+  await albumForm.getByLabel('Album cover (optional)',{exact:true}).setInputFiles({name:'album.png',mimeType:'image/png',buffer:photoBytes});
+  await albumForm.getByAltText('Selected album cover preview').waitFor();
+  await albumForm.getByRole('button',{name:'Create album',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Album added to the library.'}).waitFor();
+  const coverAlbum=await Album.findOne({where:{title:coverAlbumTitle}});extraAlbumIds.push(coverAlbum.id);
+  assert.ok(coverAlbum.coverImageUrl.includes(artistPhotoAssets[3]));
+  assert.equal((await MediaAsset.findByPk(artistPhotoAssets[3])).folder,'onebodymusic/albums');
+  await page.getByText('Add or replace album cover',{exact:true}).click();
+  const coverEditor=page.locator('form').filter({has:page.getByRole('button',{name:'Save album cover',exact:true})});
+  await coverEditor.getByLabel('Album cover',{exact:true}).setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:photoBytes});
+  await coverEditor.getByRole('button',{name:'Save album cover',exact:true}).click();
+  await coverEditor.getByRole('status').filter({hasText:'Album cover updated.'}).waitFor();
+  await coverAlbum.reload();assert.ok(coverAlbum.coverImageUrl.includes(artistPhotoAssets[4]));
+  await albumForm.getByLabel('Album title',{exact:true}).fill(coverAlbumTitle);
+  await albumForm.getByLabel('Album cover (optional)',{exact:true}).setInputFiles({name:'duplicate.png',mimeType:'image/png',buffer:photoBytes});
+  await albumForm.getByRole('button',{name:'Create album',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:/already exists|already in use/}).waitFor();
+  assert.equal((await MediaAsset.findByPk(artistPhotoAssets[5])).status,MediaStatus.DELETED);
+  await go('/albums');await page.getByRole('link').filter({hasText:coverAlbumTitle}).locator('img').waitFor();
+  checks.push('album cover validation/preview, creation, replacement, card display and failed-save compensation (controlled provider responses)');
   await go('/artists');await page.getByRole('link').filter({hasText:photoArtistName}).locator('img').waitFor();
   await page.unrouteAll({behavior:'wait'});
   checks.push('artist photo preview/validation, creation, replacement, card display and failed-save compensation (controlled provider responses)');
@@ -152,7 +178,7 @@ async function main() {
   assert.deepEqual(errors,[]); checks.push('no browser JavaScript errors'); console.log(JSON.stringify({passed:checks}));
  } catch(error) { await page?.screenshot({path:'/tmp/onebodymusic-browser-failure.png',fullPage:true}).catch(()=>undefined); throw error; } finally {
   await browser?.close(); for(const {child,stopped}of processes.reverse()){if(child.exitCode===null)child.kill('SIGTERM');await stopped;}
-  try {const users=await User.findAll({where:{email:emails}});const ids=users.map(u=>u.id);await Rehearsal.destroy({where:{createdById:ids}});await Playlist.destroy({where:{createdById:ids}});await Song.destroy({where:{uploadedById:ids}});if(album)await Album.destroy({where:{id:album.id}});if(artist)await Artist.destroy({where:{id:artist.id}});await Artist.destroy({where:{id:extraArtistIds}});await Artist.destroy({where:{name:`Photo Artist ${suffix}`}});for(const id of uploadedArtistAssets){const asset=await MediaAsset.findByPk(id);if(asset&&asset.status!==MediaStatus.DELETED){if(asset.status!==MediaStatus.CLEANUP_PENDING)await asset.update({status:MediaStatus.CLEANUP_PENDING});await asset.update({status:MediaStatus.DELETED});}}await MediaAsset.destroy({where:{id:uploadedArtistAssets}});await User.destroy({where:{id:ids}});}finally{await db.close();}
+  try {const users=await User.findAll({where:{email:emails}});const ids=users.map(u=>u.id);await Rehearsal.destroy({where:{createdById:ids}});await Playlist.destroy({where:{createdById:ids}});await Song.destroy({where:{uploadedById:ids}});if(album)await Album.destroy({where:{id:album.id}});await Album.destroy({where:{id:extraAlbumIds}});await Album.destroy({where:{title:`Cover Album ${suffix}`}});if(artist)await Artist.destroy({where:{id:artist.id}});await Artist.destroy({where:{id:extraArtistIds}});await Artist.destroy({where:{name:`Photo Artist ${suffix}`}});for(const id of uploadedArtistAssets){const asset=await MediaAsset.findByPk(id);if(asset&&asset.status!==MediaStatus.DELETED){if(asset.status!==MediaStatus.CLEANUP_PENDING)await asset.update({status:MediaStatus.CLEANUP_PENDING});await asset.update({status:MediaStatus.DELETED});}}await MediaAsset.destroy({where:{id:uploadedArtistAssets}});await User.destroy({where:{id:ids}});}finally{await db.close();}
  }
 }
 main().catch((e)=>{console.error(e.message);process.exitCode=1;});

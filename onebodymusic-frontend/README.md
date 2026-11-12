@@ -242,3 +242,14 @@ JPEG, PNG and WebP use the configured image limit (5 MiB by default) and require
 Cloudinary-enabled media uploads. Photos upload to the fixed artists folder;
 failed artist saves request deletion of the unused upload. Replaced images
 become unreferenced and are collected by the existing staged-media cleanup worker.
+
+### Album covers
+
+In **Admin workspace → Add to the library**, select an artist, expand
+**Create an album**, and choose an optional **Album cover** before creating it.
+To add or replace an existing cover, select the artist and album, expand
+**Add or replace album cover**, select an image, and choose **Save album cover**.
+JPEG, PNG and WebP use the same preview, size limit, and Cloudinary setup as
+artist photos. Covers upload to the albums folder and appear on album cards and
+details; they are separate from individual song artwork. Failed album saves
+request cleanup of their unused uploads.
