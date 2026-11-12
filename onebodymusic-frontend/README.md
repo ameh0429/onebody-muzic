@@ -60,7 +60,7 @@ src/
   components/              Shared states, headings, covers, pagination,
                            paginated remote selectors, PWA prompt, error boundary
   features/
-    auth/                  Memory-only session, login, pending registration
+    auth/                  In-memory access JWT, HttpOnly session restoration, login, registration
     dashboard/             Recent songs and upcoming rehearsals
     library/               Songs, artists, albums, details, lyrics, audio playback
     playlists/             Personal/rehearsal sets, metadata, ordered song controls
@@ -104,15 +104,21 @@ required; artwork loads lazily when supplied by the backend.
 
 ## Authentication and data
 
-- Axios attaches the access JWT to API requests. Tokens and user/session data stay
-  in memory, never localStorage, sessionStorage, IndexedDB, or a service-worker
-  cache. **Reloading/reopening the app requires signing in again.** The current
-  backend has no refresh-token endpoint; the frontend does not invent one.
-- The app signs out at the configured access-token expiry and on API 401 responses.
-  Current account status and roles are rechecked on window focus and each minute;
-  the backend still checks permissions on every request. Query data is cleared on
-  logout and on identity changes. Admin guards are UI controls, not a replacement
-  for backend authorization.
+- Axios attaches a short-lived access JWT held only in memory. The backend keeps a
+  rotating refresh token in an HttpOnly cookie. Refreshing/reopening the app restores
+  the signed-in user while the 14-day session remains valid; no token or user data is
+  saved in localStorage, sessionStorage, IndexedDB, or a service-worker cache.
+- Access tokens renew before expiry and a protected API 401 can renew/retry once.
+  Current roles/status are checked on focus and every 30 seconds. Logout immediately
+  clears local identity, queries, audio and lock-screen metadata, then revokes the
+  server session and clears its cookie. Other tabs receive the logout signal.
+  A non-secret logout-pending flag is the only additional localStorage value; if
+  server logout fails, it prevents automatic restoration until revocation succeeds.
+- Session requests use credentials and a custom CSRF header. Web Locks serialize
+  refresh-cookie rotation across supported same-origin browser tabs, and a shared
+  in-flight request prevents duplicate renewal within a page. A replayed old refresh
+  token revokes that session family; simultaneous refreshes from older browsers
+  without Web Locks may require signing in again.
 - Lists use server pagination. Song/artist/album search is debounced; selector and
   playlist-picker searches are submitted explicitly. Query requests support abort
   signals, use a 60-second stale time, and do not automatically retry failures.
@@ -158,7 +164,7 @@ files, account data, uploads or playback tickets are stored. The offline shell c
 open, but sign-in, library access and music require a network connection. Lazy route
 chunks, local system fonts, paginated lists, lazy artwork and on-demand playback
 reduce network work. An available-update prompt allows deferral; applying an update
-reloads and requires signing in again. Finish uploads before applying an update.
+reloads; the session is restored when online. Finish uploads before applying an update.
 
 ## Verification
 
@@ -198,7 +204,7 @@ uploads/playback were not exercised** without provider credentials. The frontend
 production dependency audit reported zero advisories at implementation time.
 
 Frontend MVP scope does not include offline downloads, notifications, attendance,
-password recovery, refresh tokens, or full artist/album/song editing/deletion UIs.
+password recovery or full artist/album/song editing/deletion UIs.
 Those backend endpoints remain available through Swagger. The included admin flow
 covers creation/upload, account management, playlist management and scheduling.
 
@@ -283,5 +289,23 @@ The app does not pause just because its page becomes hidden. Background playback
 still depends on the browser, operating system, battery settings and account
 session remaining valid. A PWA does not guarantee uninterrupted playback while
 minimized; test on the target phone. Reloading or closing the app stops playback
-and clears the in-memory session. No audio, playback ticket or player session is
+and clears the in-memory player; login is restored from the session cookie when online. No audio, playback ticket or player session is
 persisted for offline use.
+
+### Persistent session deployment
+
+Apply backend migration `010-refresh-sessions` with `npm run db:migrate` before
+starting the updated API. Restart both frontend and backend. Sign in once using
+the updated frontend to create a persistent session; older access-only logins
+cannot be restored. Login lasts up to 14 days, subject to logout, suspension or
+revocation. Reload still stops the current audio; player state is not persisted.
+
+Use the same hostname consistently in development (`localhost` versus `127.0.0.1`).
+The API’s `CORS_ALLOWED_ORIGINS` must contain the exact frontend origin. Production
+requires HTTPS: the cookie is Secure there. Prefer same-origin hosting with an
+API proxy or same-site frontend/API domains. If the API is genuinely cross-site,
+set backend `AUTH_COOKIE_SAME_SITE=none` with `NODE_ENV=production`; browser
+third-party-cookie restrictions can still block it. Development defaults to Lax.
+
+Browser checks cover reload/new-tab restoration, credentialed cookies, renewal
+after an API 401, logout across tabs, and prevention of restoration after logout.

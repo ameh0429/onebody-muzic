@@ -259,7 +259,7 @@ For role-restricted endpoints in future feature modules, import `AuthModule`, th
 
 `@Roles(Role.ADMIN, Role.MEMBER)` allows either role. Method roles override controller roles. `RolesGuard` denies authenticated users with a nonmatching current role with `403`. Use `@CurrentUser() user: UserResponseDto` to receive the sanitized, database-validated user. `@Roles()` is metadata; it requires the guards. No administrative or business test routes are shipped in the application.
 
-Swagger provides request/response schemas, examples, and failure codes under **Authentication**. Log in with an ACTIVE account, copy `accessToken`, click **Authorize**, paste it without a prefix, and execute **GET /api/v1/auth/me**. Swagger does not persist authorization across page reloads. There are no refresh-token, logout, activation, or password-reset endpoints in this task; access tokens expire after their configured short lifetime.
+Swagger provides request/response schemas, examples, and failure codes under **Authentication**. Log in with an ACTIVE account, copy `accessToken`, click **Authorize**, paste it without a prefix, and execute **GET /api/v1/auth/me**. Swagger does not persist authorization across page reloads. The browser session endpoints described below add persistent renewal and logout. Activation and password-reset endpoints are not provided; access tokens retain their configured short lifetime.
 
 Authentication HTTP/guard tests run with `npm test`. They exercise real Argon2 and JWT/Passport behavior with a repository test double. For real persistence checks, migrate a dedicated database, set `TEST_DATABASE_URL` securely, and run:
 
@@ -958,3 +958,39 @@ Authenticated audio delivery uses the standard SDK URL signature (`sign_url: tru
 authenticated; provider URLs remain internal and browser playback still requires
 a short-lived application ticket. This change requires a backend restart/rebuild,
 not a database migration or audio re-upload.
+
+## Persistent browser sessions
+
+Run `npm run db:migrate` (or `npm run db:migrate:prod` after building) before
+starting this version. Migration `010-refresh-sessions` adds AuthSession and
+RefreshToken tables without modifying existing accounts or passwords. Existing
+users must sign in once in the updated frontend to obtain a session cookie.
+
+- `POST /api/v1/auth/session`: accepts the existing login DTO, returns the normal
+  access-token/profile response and sets an HttpOnly refresh cookie.
+- `POST /api/v1/auth/refresh`: rotates that cookie and returns a fresh access JWT
+  and the current active user. A consumed token revokes its family when replayed.
+- `POST /api/v1/auth/logout`: revokes the current family and clears the cookie;
+  repeated logout is harmless. Existing access JWTs remain valid until their short
+  expiry, subject to the existing per-request active-account checks.
+
+All three require `X-Session-Request: 1`; an Origin header, when supplied, must be
+in `CORS_ALLOWED_ORIGINS`. Refresh/logout bodies must be empty objects. Login and
+refresh use the shared authentication rate limiter. Responses are not cached.
+The original `/auth/login` remains available for access-only API/Swagger clients.
+
+Refresh tokens are cryptographically random (48 bytes), are never returned in
+JSON, and are stored only as SHA-256 hashes. Rotation is transactional; families
+expire after a fixed 14 days and cannot renew after suspension/deletion. Cookies
+are host-only with Path `/api/v1/auth`, HttpOnly, SameSite=Lax by default and
+Secure in production. `AUTH_COOKIE_SAME_SITE` accepts lax/strict/none; none is
+allowed only in production HTTPS mode. Prefer same-site/API-proxy deployment;
+third-party cookie blocking can prevent genuinely cross-site sessions. CORS uses
+explicit approved origins and allows credentials. No cookie credential is needed
+for native audio playback, which continues to use scoped playback tickets.
+
+Expired session families are pruned in bounded batches on browser login; expired
+records are harmless until removed. Dropping the refresh-session tables invalidates
+all persistent sessions. Integration checks run in `npm run test:integration` and
+cover cookie settings, CSRF, rotation/replay, logout, expiry, account suspension
+and production Secure/SameSite=None flags.

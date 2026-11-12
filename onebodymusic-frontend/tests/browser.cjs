@@ -31,7 +31,7 @@ async function main() {
   const set = await Playlist.create({title:'Sunday worship',type:PlaylistType.REHEARSAL,publicationStatus:PlaylistPublicationStatus.PUBLISHED,createdById:admin.id});
   const event = await Rehearsal.create({title:'Sunday choir practice',scheduledAt:new Date('2099-12-01T16:00:00Z'),playlistId:set.id,createdById:admin.id});
   const apiPort = await port(); const webPort = await port();
-  for (const [command,args,cwd,env] of [[process.execPath,['dist/main.js'],backend,{DATABASE_URL:url,PORT:String(apiPort),JWT_SECRET:randomBytes(48).toString('hex'),CORS_ALLOWED_ORIGINS:`http://127.0.0.1:${webPort}`,MEDIA_ENABLED:'false'}],[process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port',String(webPort),'--strictPort'],resolve(__dirname,'..'),{VITE_DEV_API_TARGET:`http://127.0.0.1:${apiPort}`} ]]) { const child = spawn(command,args,{cwd,env:{...process.env,...env},stdio:'ignore'}); processes.push({child,stopped:once(child,'exit')}); }
+  for (const [command,args,cwd,env] of [[process.execPath,['dist/main.js'],backend,{DATABASE_URL:url,PORT:String(apiPort),JWT_SECRET:randomBytes(48).toString('hex'),CORS_ALLOWED_ORIGINS:`http://127.0.0.1:${webPort}`,MEDIA_ENABLED:'false',AUTH_LOGIN_MAX_ATTEMPTS:'100'}],[process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port',String(webPort),'--strictPort'],resolve(__dirname,'..'),{VITE_DEV_API_TARGET:`http://127.0.0.1:${apiPort}`} ]]) { const child = spawn(command,args,{cwd,env:{...process.env,...env},stdio:'ignore'}); processes.push({child,stopped:once(child,'exit')}); }
   await ready(`http://127.0.0.1:${apiPort}/api/v1/health`); await ready(`http://127.0.0.1:${webPort}`);
   browser = await chromium.launch({headless:true,...(process.env.BROWSER_EXECUTABLE_PATH ? {executablePath:process.env.BROWSER_EXECUTABLE_PATH}: {})});
   const context = await browser.newContext({viewport:{width:1440,height:1000}}); page = await context.newPage(); page.on('dialog', (dialog) => void dialog.accept()); const errors = []; page.on('pageerror',(e)=>errors.push(e.message));
@@ -42,6 +42,23 @@ async function main() {
   await page.getByRole('link',{name:'Create an account'}).click(); await page.getByLabel('Full name').fill('New Choir Member'); await page.getByLabel('Email address').fill(emails[2]); await page.getByLabel('Password',{exact:true}).fill(password); await page.getByLabel('Confirm password').fill(password); await page.getByRole('button',{name:'Create account',exact:true}).click(); await page.getByRole('heading',{name:'You’re on the list.'}).waitFor();
   assert.equal((await User.findOne({where:{email:emails[2]}})).status,'PENDING'); await page.getByRole('link',{name:'Back to sign in'}).click(); checks.push('registration creates pending account with approval guidance');
   await login(emails[0]); await page.getByText('Amazing Grace',{exact:true}).first().waitFor(); await page.screenshot({path:'/tmp/onebodymusic-desktop.png',fullPage:true}); checks.push('admin login and live dashboard');
+  const sessionBefore=(await context.cookies()).find(c=>c.name==='onebodymusic_session');assert.ok(sessionBefore?.httpOnly);assert.equal(sessionBefore.path,'/api/v1/auth');
+  await page.reload();await page.getByRole('heading',{name:/Hello,/}).waitFor();
+  const sessionAfter=(await context.cookies()).find(c=>c.name==='onebodymusic_session');assert.ok(sessionAfter);assert.notEqual(sessionAfter.value,sessionBefore.value);
+  assert.equal(await page.evaluate(()=>document.cookie.includes('onebodymusic_session')),false);
+  const sessionTab=await context.newPage();await sessionTab.goto(`${base}/profile`);await sessionTab.getByRole('heading',{name:'Your profile',exact:true}).waitFor();
+  await Promise.all([page.reload(),sessionTab.reload()]);await page.getByRole('heading',{name:/Hello,/}).waitFor();await sessionTab.getByRole('heading',{name:'Your profile',exact:true}).waitFor();await page.bringToFront();
+  checks.push('HttpOnly session restores after refresh and in a second tab; refresh cookie rotates');
+  const beforeRenewal=(await context.cookies()).find(c=>c.name==='onebodymusic_session').value;
+  let accountChecks=0;
+  await page.route('**/api/v1/auth/me',async r=>{accountChecks++;if(accountChecks===1)await r.fulfill({status:401,contentType:'application/json',body:JSON.stringify({message:'Expired access token'})});else await r.continue();});
+  const renewedAccount=page.waitForResponse(r=>r.url().endsWith('/api/v1/auth/me')&&r.status()===200);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await renewedAccount;
+  assert.ok(accountChecks>=2);assert.notEqual((await context.cookies()).find(c=>c.name==='onebodymusic_session').value,beforeRenewal);
+  await page.getByRole('heading',{name:/Hello,/}).waitFor();await page.unroute('**/api/v1/auth/me');
+  checks.push('an API 401 renews the HttpOnly session and retries the request without signing out');
+
+
   for (const [path,heading] of [['/songs','Music library'],[`/songs/${songs[0].id}`,'Amazing Grace'],['/artists','Voices of worship'],[`/artists/${artist.id}`,artist.name],['/albums','Albums'],[`/albums/${album.id}`,album.title],['/playlists','Your playlists'],['/rehearsals','Rehearsals'],[`/rehearsals/${event.id}`,event.title],['/profile','Your profile'],['/admin','Admin workspace'],['/admin/upload','Add to the library']]) { await go(path); await page.getByRole('heading',{name:heading,exact:true}).first().waitFor(); }
   checks.push('all library, details, profile, rehearsal and admin screens render against real API');
   await go(`/albums/${album.id}`);
@@ -130,6 +147,11 @@ async function main() {
   assert.equal(await logoutAudio.evaluate(el=>el.paused&&!el.getAttribute('src')),true);
   if(await page.evaluate(()=>!!navigator.mediaSession))assert.equal(await page.evaluate(()=>navigator.mediaSession.metadata),null);
   checks.push('logout stops playing audio, removes its source and clears lock-screen metadata');
+  await sessionTab.getByRole('heading',{name:'Welcome back.'}).waitFor();await sessionTab.close();
+  await page.reload();await page.getByRole('heading',{name:'Welcome back.'}).waitFor();
+  assert.equal((await context.cookies()).some(c=>c.name==='onebodymusic_session'),false);
+  checks.push('logout clears the cookie across tabs and a page refresh cannot restore the revoked session');
+
   await login(emails[1]); await go('/admin/upload'); await page.getByRole('heading',{name:/Hello,/}).waitFor(); assert.equal(await page.getByRole('link',{name:'Admin workspace',exact:true}).count(),0); checks.push('profile update, logout and member admin-route restriction');
   await go('/playlists'); await page.getByLabel('Playlist name').fill(`My practice ${suffix}`); await page.getByRole('button',{name:'Create playlist'}).click(); await page.getByRole('heading',{name:`My practice ${suffix}`}).waitFor();
   await page.getByRole('button',{name:'Add',exact:true}).first().click(); await page.getByRole('button',{name:'Added',exact:true}).waitFor(); await page.getByRole('button',{name:'Add',exact:true}).first().click(); const firstTitle=await page.locator('.song-row').first().locator('strong').innerText();

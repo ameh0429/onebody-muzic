@@ -1,10 +1,21 @@
 import axios from 'axios';
 let accessToken: string | null = null;
+let renewSession: (() => Promise<void>) | null = null;
+export function setSessionRenewal(handler: (() => Promise<void>) | null) { renewSession = handler; }
 export function setAccessToken(token: string | null) { accessToken = token; }
 export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1', timeout: 20000 });
 api.interceptors.request.use((config) => { if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`; return config; });
-api.interceptors.response.use((response) => response, (error: unknown) => {
-  if (axios.isAxiosError(error) && error.response?.status === 401 && accessToken && !error.config?.url?.startsWith('/auth/login')) window.dispatchEvent(new Event('session-expired'));
+api.interceptors.response.use((response) => response, async (error: unknown) => {
+  if (axios.isAxiosError(error) && error.response?.status === 401 && accessToken && error.config && !/\/auth\/(login|register|session|refresh|logout)(?:$|\?)/u.test(error.config.url || '')) {
+    const config = error.config as typeof error.config & { sessionRetried?: boolean };
+    if (!config.sessionRetried && renewSession) {
+      config.sessionRetried = true;
+      const previousAuthorization = config.headers.Authorization;
+      if (previousAuthorization === `Bearer ${accessToken}`) await renewSession();
+      return api.request(config);
+    }
+    window.dispatchEvent(new Event('session-expired'));
+  }
   return Promise.reject(error);
 });
 export function message(error: unknown): string {

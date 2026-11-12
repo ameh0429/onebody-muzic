@@ -61,6 +61,11 @@ export class AuthService {
     return this.sanitize(user);
   }
 
+  async issueSessionResponse(id: string): Promise<LoginResponseDto> {
+    const user = await this.authenticateTokenSubject(id);
+    return { accessToken: await this.jwt.signAsync({ sub: id }), tokenType: 'Bearer', expiresIn: this.config.get('JWT_ACCESS_TOKEN_TTL_SECONDS', { infer: true }), user };
+  }
+
   private sanitize(user: User): UserResponseDto {
     return {
       id: user.id, name: user.name, email: user.email, role: user.role, status: user.status,

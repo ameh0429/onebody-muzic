@@ -23,7 +23,7 @@ export function configureApp(app: INestApplication): void {
     next(error);
   };
   app.use(redactParserErrors);
-  app.enableCors({ origin: config.get('CORS_ALLOWED_ORIGINS', { infer: true }) });
+  app.enableCors({ credentials: true, origin: config.get('CORS_ALLOWED_ORIGINS', { infer: true }) });
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));

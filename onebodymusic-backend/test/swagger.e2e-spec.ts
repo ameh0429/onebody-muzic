@@ -48,7 +48,7 @@ describe('Complete runtime route and OpenAPI contract audit', () => {
         actual.add(`${RequestMethod[method]!.toLowerCase()} ${path}`);
       }
     }
-    expect(actual.size).toBe(43); expect(new Set(operations().map(({ path, method }) => `${method} ${path}`))).toEqual(actual);
+    expect(actual.size).toBe(46); expect(new Set(operations().map(({ path, method }) => `${method} ${path}`))).toEqual(actual);
   });
   it('groups every operation, resolves every schema reference and defines success schemas', () => {
     const ids = new Set<string>();
@@ -66,7 +66,7 @@ describe('Complete runtime route and OpenAPI contract audit', () => {
     expect(/amehmathiasejeh@gmail|passwordHash|api_secret/iu.test(JSON.stringify(document))).toBe(false);
   });
   it('documents bearer auth for all protected routes and actually rejects missing authentication', async () => {
-    const publicRoutes = new Set(['get /api/v1/health', 'post /api/v1/auth/login', 'post /api/v1/auth/register']);
+    const publicRoutes = new Set(['get /api/v1/health', 'post /api/v1/auth/login', 'post /api/v1/auth/register', 'post /api/v1/auth/session', 'post /api/v1/auth/refresh', 'post /api/v1/auth/logout']);
     for (const { path, method, operation } of operations()) {
       if (publicRoutes.has(`${method} ${path}`)) continue;
       expect(operation.security).toEqual(expect.arrayContaining([{ bearer: [] }])); expect(operation.responses['401']).toBeDefined();
