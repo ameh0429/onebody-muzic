@@ -228,3 +228,17 @@ The browser workflow also checks picture validation, preview/cancellation, uploa
 shared avatar updates and removal using controlled provider responses. Backend
 integration tests exercise the real API, database, ownership and cleanup with a
 provider test double; live Cloudinary uploads need provider credentials.
+
+### Artist photos
+
+In **Admin workspace → Add to the library**, expand **Add a new artist** and
+choose an optional **Artist photo** before selecting **Create artist**. To add
+or replace an existing artist’s photo, select the artist above, expand
+**Add or replace artist photo**, choose a file, and select **Save artist photo**.
+The preview lets you check the image before saving. Artist cards and details
+refresh after a successful save. Artist photos are separate from song artwork.
+
+JPEG, PNG and WebP use the configured image limit (5 MiB by default) and require
+Cloudinary-enabled media uploads. Photos upload to the fixed artists folder;
+failed artist saves request deletion of the unused upload. Replaced images
+become unreferenced and are collected by the existing staged-media cleanup worker.

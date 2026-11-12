@@ -10,13 +10,13 @@ const { createServer } = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright');
 const backend = resolve(__dirname, '../../onebodymusic-backend'); const req = createRequire(`${backend}/package.json`); req('reflect-metadata');
-const { createDatabase } = req('./dist/database/connection'); const { Artist, Album, Song, Playlist, Rehearsal, User, Role, UserStatus, PlaylistType, PlaylistPublicationStatus } = req('./dist/database/models'); const { hash } = req('argon2');
+const { createDatabase } = req('./dist/database/connection'); const { Artist, Album, Song, Playlist, Rehearsal, MediaAsset, MediaKind, MediaStatus, User, Role, UserStatus, PlaylistType, PlaylistPublicationStatus } = req('./dist/database/models'); const { hash } = req('argon2');
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error('TEST_DATABASE_URL must point to a dedicated migrated test database.');
 async function port() { const socket = createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening'); const n = socket.address().port; await new Promise((r) => socket.close(r)); return n; }
 async function ready(url) { for (let i = 0; i < 100; i++) { try { if ((await fetch(url)).ok) return; } catch {} await delay(100); } throw new Error('Server did not start'); }
 async function main() {
- const db = createDatabase(url); const processes = []; let browser; let page; const suffix = randomUUID(); const emails = ['admin','member','new'].map((s) => `frontend-${s}-${suffix}@example.org`); const password = randomBytes(24).toString('hex'); let artist; let album; let songs = []; const checks = [];
+ const uploadedArtistAssets=[]; const extraArtistIds=[]; const db = createDatabase(url); const processes = []; let browser; let page; const suffix = randomUUID(); const emails = ['admin','member','new'].map((s) => `frontend-${s}-${suffix}@example.org`); const password = randomBytes(24).toString('hex'); let artist; let album; let songs = []; const checks = [];
  try {
   await db.authenticate(); const passwordHash = await hash(password);
   const admin = await User.create({name:'Grace Admin',email:emails[0],passwordHash,role:Role.ADMIN,status:UserStatus.ACTIVE});
@@ -92,6 +92,49 @@ async function main() {
   await page.unroute('**/api/v1/users/me/picture');
   checks.push('member profile picture validation, preview/cancel, upload, shared avatars and removal (controlled provider responses)');
   await go('/profile'); await page.getByRole('button',{name:'Sign out',exact:true}).click(); await login(emails[0]); await go('/admin/upload');
+  const artistPhotoAssets=[];
+  await page.route('https://res.cloudinary.com/frontend-artist-test/**',r=>r.fulfill({status:200,contentType:'image/png',body:photoBytes}));
+  await page.route('**/api/v1/media/images',async r=>{
+    assert.ok(r.request().postDataBuffer().includes(Buffer.from('artists')));
+    const id=randomUUID(); const publicId=`onebodymusic/artists/${id}`;
+    const asset=await MediaAsset.create({id,kind:MediaKind.IMAGE,status:MediaStatus.READY,folder:'onebodymusic/artists',publicId,resourceType:'image',deliveryType:'upload',format:'png',mimeType:'image/png',bytes:photoBytes.length,duration:null,width:1,height:1,uploadedById:admin.id});
+    uploadedArtistAssets.push(id);artistPhotoAssets.push(id);
+    await r.fulfill({status:201,contentType:'application/json',body:JSON.stringify({id,status:'READY',url:`https://res.cloudinary.com/frontend-artist-test/image/upload/${publicId}.png`,publicId})});
+  });
+  await page.route('**/api/v1/media/*',async r=>{
+    if(r.request().method()!=='DELETE'){await r.fallback();return;}
+    const id=r.request().url().split('/').pop();
+    if(!artistPhotoAssets.includes(id)){await r.fallback();return;}
+    const asset=await MediaAsset.findByPk(id);await asset.update({status:MediaStatus.CLEANUP_PENDING});await asset.update({status:MediaStatus.DELETED});
+    await r.fulfill({status:204});
+  });
+  await page.getByText('+ Add a new artist',{exact:true}).click();
+  const newArtistForm=page.locator('form').filter({has:page.getByRole('button',{name:'Create artist',exact:true})});
+  const photoArtistName=`Photo Artist ${suffix}`;
+  await newArtistForm.getByLabel('Name',{exact:true}).fill(photoArtistName);
+  await newArtistForm.getByLabel('Artist photo (optional)',{exact:true}).setInputFiles({name:'invalid.txt',mimeType:'text/plain',buffer:Buffer.from('invalid')});
+  assert.equal(await newArtistForm.getByRole('button',{name:'Create artist',exact:true}).isDisabled(),true);
+  await newArtistForm.getByLabel('Artist photo (optional)',{exact:true}).setInputFiles({name:'artist.png',mimeType:'image/png',buffer:photoBytes});
+  await newArtistForm.getByAltText('Selected artist photo preview').waitFor();
+  await newArtistForm.getByRole('button',{name:'Create artist',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Artist added to the library.'}).waitFor();
+  const photoArtist=await Artist.findOne({where:{name:photoArtistName}});extraArtistIds.push(photoArtist.id);
+  assert.ok(photoArtist.imageUrl.includes(artistPhotoAssets[0]));
+  await page.getByText('Add or replace artist photo',{exact:true}).click();
+  const photoEditor=page.locator('form').filter({has:page.getByRole('button',{name:'Save artist photo',exact:true})});
+  await photoEditor.getByLabel('Artist photo',{exact:true}).setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:photoBytes});
+  await photoEditor.getByRole('button',{name:'Save artist photo',exact:true}).click();
+  await photoEditor.getByRole('status').filter({hasText:'Artist photo updated.'}).waitFor();
+  await photoArtist.reload();assert.ok(photoArtist.imageUrl.includes(artistPhotoAssets[1]));
+  await newArtistForm.getByLabel('Name',{exact:true}).fill(photoArtistName);
+  await newArtistForm.getByLabel('Artist photo (optional)',{exact:true}).setInputFiles({name:'duplicate.png',mimeType:'image/png',buffer:photoBytes});
+  await newArtistForm.getByRole('button',{name:'Create artist',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Artist name is already in use'}).waitFor();
+  assert.equal((await MediaAsset.findByPk(artistPhotoAssets[2])).status,MediaStatus.DELETED);
+  await go('/artists');await page.getByRole('link').filter({hasText:photoArtistName}).locator('img').waitFor();
+  await page.unrouteAll({behavior:'wait'});
+  checks.push('artist photo preview/validation, creation, replacement, card display and failed-save compensation (controlled provider responses)');
+  await go('/admin/upload');
   await page.getByRole('combobox',{name:'Artist',exact:true}).selectOption(artist.id); await page.getByLabel('Song title').fill('Upload failure probe');
   const assetId=randomUUID(); let compensated=false;
   await page.route('**/api/v1/media/audio',r=>r.fulfill({status:201,contentType:'application/json',body:JSON.stringify({id:assetId,status:'READY'})}));
@@ -109,7 +152,7 @@ async function main() {
   assert.deepEqual(errors,[]); checks.push('no browser JavaScript errors'); console.log(JSON.stringify({passed:checks}));
  } catch(error) { await page?.screenshot({path:'/tmp/onebodymusic-browser-failure.png',fullPage:true}).catch(()=>undefined); throw error; } finally {
   await browser?.close(); for(const {child,stopped}of processes.reverse()){if(child.exitCode===null)child.kill('SIGTERM');await stopped;}
-  try {const users=await User.findAll({where:{email:emails}});const ids=users.map(u=>u.id);await Rehearsal.destroy({where:{createdById:ids}});await Playlist.destroy({where:{createdById:ids}});await Song.destroy({where:{uploadedById:ids}});if(album)await Album.destroy({where:{id:album.id}});if(artist)await Artist.destroy({where:{id:artist.id}});await User.destroy({where:{id:ids}});}finally{await db.close();}
+  try {const users=await User.findAll({where:{email:emails}});const ids=users.map(u=>u.id);await Rehearsal.destroy({where:{createdById:ids}});await Playlist.destroy({where:{createdById:ids}});await Song.destroy({where:{uploadedById:ids}});if(album)await Album.destroy({where:{id:album.id}});if(artist)await Artist.destroy({where:{id:artist.id}});await Artist.destroy({where:{id:extraArtistIds}});await Artist.destroy({where:{name:`Photo Artist ${suffix}`}});for(const id of uploadedArtistAssets){const asset=await MediaAsset.findByPk(id);if(asset&&asset.status!==MediaStatus.DELETED){if(asset.status!==MediaStatus.CLEANUP_PENDING)await asset.update({status:MediaStatus.CLEANUP_PENDING});await asset.update({status:MediaStatus.DELETED});}}await MediaAsset.destroy({where:{id:uploadedArtistAssets}});await User.destroy({where:{id:ids}});}finally{await db.close();}
  }
 }
 main().catch((e)=>{console.error(e.message);process.exitCode=1;});
