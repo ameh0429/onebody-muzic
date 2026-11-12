@@ -253,3 +253,13 @@ JPEG, PNG and WebP use the same preview, size limit, and Cloudinary setup as
 artist photos. Covers upload to the albums folder and appear on album cards and
 details; they are separate from individual song artwork. Failed album saves
 request cleanup of their unused uploads.
+
+### Audio returns 206 but the browser refuses playback
+
+The audio element uses anonymous CORS mode so a separately hosted API can keep
+Helmet’s `Cross-Origin-Resource-Policy: same-origin` protection. The backend’s
+`CORS_ALLOWED_ORIGINS` must include the frontend’s exact origin (for example,
+`http://localhost:5173`). `localhost` and `127.0.0.1` are different origins. Restart
+the backend after changing that setting. Playback still uses song-scoped tickets;
+no cookies or access JWTs are sent by the audio element. A 206 alone does not
+confirm that the browser accepted the response or decoded the media.

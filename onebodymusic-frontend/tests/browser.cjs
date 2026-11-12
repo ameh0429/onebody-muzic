@@ -23,7 +23,11 @@ async function main() {
   await User.create({name:'James Member',email:emails[1],passwordHash,role:Role.MEMBER,status:UserStatus.ACTIVE});
   artist = await Artist.create({ name:`The Worship Collective ${suffix}`, biography:'A community of voices, joined in worship.' });
   album = await Album.create({title:'Songs for the Journey',artistId:artist.id,releaseYear:2026});
-  for (const title of ['Amazing Grace','Great Is Your Faithfulness']) songs.push(await Song.create({title,artistId:artist.id,albumId:album.id,uploadedById:admin.id,category:'Worship',lyrics:'Verse 1\nAmazing grace, how sweet the sound\n\nChorus\nWe sing together.',audioPublicId:`fixture-${randomUUID()}`,audioResourceType:'video',durationSeconds:241}));
+  for (const title of ['Amazing Grace','Great Is Your Faithfulness']) {
+    const id=randomUUID(); const publicId=`onebodymusic/audio/${id}`;
+    await MediaAsset.create({id,kind:MediaKind.AUDIO,status:MediaStatus.READY,folder:'onebodymusic/audio',publicId,resourceType:'video',deliveryType:'authenticated',format:'mp3',mimeType:'audio/mpeg',bytes:1,duration:241,width:null,height:null,uploadedById:admin.id});uploadedArtistAssets.push(id);
+    songs.push(await Song.create({title,artistId:artist.id,albumId:album.id,uploadedById:admin.id,category:'Worship',lyrics:'Verse 1\nAmazing grace, how sweet the sound\n\nChorus\nWe sing together.',audioAssetId:id,audioPublicId:publicId,audioResourceType:'video',durationSeconds:241}));
+  }
   const set = await Playlist.create({title:'Sunday worship',type:PlaylistType.REHEARSAL,publicationStatus:PlaylistPublicationStatus.PUBLISHED,createdById:admin.id});
   const event = await Rehearsal.create({title:'Sunday choir practice',scheduledAt:new Date('2099-12-01T16:00:00Z'),playlistId:set.id,createdById:admin.id});
   const apiPort = await port(); const webPort = await port();
@@ -39,8 +43,17 @@ async function main() {
   await login(emails[0]); await page.getByText('Amazing Grace',{exact:true}).first().waitFor(); await page.screenshot({path:'/tmp/onebodymusic-desktop.png',fullPage:true}); checks.push('admin login and live dashboard');
   for (const [path,heading] of [['/songs','Music library'],[`/songs/${songs[0].id}`,'Amazing Grace'],['/artists','Voices of worship'],[`/artists/${artist.id}`,artist.name],['/albums','Albums'],[`/albums/${album.id}`,album.title],['/playlists','Your playlists'],['/rehearsals','Rehearsals'],[`/rehearsals/${event.id}`,event.title],['/profile','Your profile'],['/admin','Admin workspace'],['/admin/upload','Add to the library']]) { await go(path); await page.getByRole('heading',{name:heading,exact:true}).first().waitFor(); }
   checks.push('all library, details, profile, rehearsal and admin screens render against real API');
-  await go('/admin'); await page.getByText('New Choir Member',{exact:true}).waitFor(); await page.getByRole('button',{name:'Approve',exact:true}).click();
-  await page.getByText('New Choir Member',{exact:true}).waitFor({state:'hidden'}); assert.equal((await User.findOne({where:{email:emails[2]}})).status,'ACTIVE'); checks.push('administrator approves a newly registered account');
+  await go(`/songs/${songs[0].id}`);
+  await page.route(`**/api/v1/songs/${songs[0].id}/stream?redirect=false`,r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({url:`/api/v1/songs/${songs[0].id}/stream?ticket=controlled-browser-ticket`})}));
+  await page.getByRole('button',{name:'Load audio',exact:true}).click();
+  await page.locator('audio').waitFor();
+  assert.equal(await page.locator('audio').evaluate(el=>el.crossOrigin),'anonymous');
+  assert.equal(await page.locator('audio').getAttribute('preload'),'none');
+  await page.unroute(`**/api/v1/songs/${songs[0].id}/stream?redirect=false`);
+  checks.push('audio requests use anonymous CORS for separately hosted APIs without automatic downloads');
+
+  await go('/admin'); const pendingMember=page.locator('.user-row').filter({hasText:emails[2]}); await pendingMember.waitFor(); await pendingMember.getByRole('button',{name:'Approve',exact:true}).click();
+  await pendingMember.waitFor({state:'hidden'}); assert.equal((await User.findOne({where:{email:emails[2]}})).status,'ACTIVE'); checks.push('administrator approves a newly registered account');
   await page.setViewportSize({width:390,height:844}); await go('/'); await page.getByRole('navigation',{name:'Mobile navigation'}).waitFor(); await page.screenshot({path:'/tmp/onebodymusic-mobile.png',fullPage:true});
   for (const path of ['/','/songs',`/songs/${songs[0].id}`,'/artists','/albums','/playlists','/rehearsals','/profile','/admin','/admin/upload']) { await go(path); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`overflow: ${path}`); }
   await page.getByRole('button',{name:'Use dark theme'}).click(); assert.equal(await page.locator('html').getAttribute('data-theme'),'dark'); checks.push('mobile navigation, theme switching and no horizontal overflow at 390px');
