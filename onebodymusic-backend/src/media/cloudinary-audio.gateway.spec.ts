@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import { EnvironmentVariables } from '../config/environment';
 import { MediaAsset } from '../database/models';
 import { CloudinaryClient } from './cloudinary.client';
-import { CloudinaryAudioGateway } from './cloudinary-audio.gateway';
+import { audioProviderReason, CloudinaryAudioGateway } from './cloudinary-audio.gateway';
 
 jest.mock('node:https', () => ({ request: jest.fn() }));
 const send = request as unknown as jest.Mock<ClientRequest, [string, RequestOptions, (response: IncomingMessage) => void]>;
@@ -54,7 +54,7 @@ describe('authenticated provider range gateway', () => {
     response.statusCode = 403;
     response.headers['x-cld-error'] = 'private-provider-detail';
     await expect(gateway.open(asset, undefined, false, new AbortController().signal)).rejects.toBeInstanceOf(BadGatewayException);
-    expect(log).toHaveBeenCalledWith('Audio delivery failed: asset=safe-asset-id; code=PROVIDER_HTTP; providerStatus=403');
+    expect(log).toHaveBeenCalledWith('Audio delivery failed: asset=safe-asset-id; code=PROVIDER_HTTP; providerStatus=403; providerReason=UNSPECIFIED');
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/internal-signed-path|private-provider-detail|https:/);
   });
   it.each([['ENOTFOUND', 'CONNECTION'], ['CERT_HAS_EXPIRED', 'TLS'], ['ETIMEDOUT', 'TIMEOUT']])('classifies %s without exposing raw network errors', async (code, failure) => {
@@ -64,6 +64,17 @@ describe('authenticated provider range gateway', () => {
     await expect(gateway.open(asset, undefined, false, new AbortController().signal)).rejects.toBeInstanceOf(BadGatewayException);
     expect(log).toHaveBeenCalledWith(`Audio delivery failed: asset=safe-asset-id; code=${failure}`);
     expect(JSON.stringify(log.mock.calls)).not.toContain('private-signed-url');
+  });
+  it.each([
+    ['Invalid Signature s--private-signature--', 'SIGNATURE_REJECTED'],
+    ['Resource not found: private/path', 'RESOURCE_NOT_FOUND'],
+    ['Token expired: private-token', 'TOKEN_REJECTED'],
+    ['Deny or ACL failure', 'ACCESS_RESTRICTED'],
+    ['Video is restricted', 'ACCESS_RESTRICTED'],
+    ['Unknown cloud name private-account', 'ACCOUNT_CONFIGURATION'],
+    [undefined, 'UNSPECIFIED'],
+  ])('categorizes provider headers without exposing their contents', (header, reason) => {
+    expect(audioProviderReason(header)).toBe(reason);
   });
   it('preserves an authenticated unsatisfiable-range result', async () => {
     response.statusCode = 416; response.headers = { 'content-range': 'bytes */6', 'content-length': '0' };

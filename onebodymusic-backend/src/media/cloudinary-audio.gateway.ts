@@ -16,6 +16,17 @@ export interface AudioUpstream {
   contentRange?: string;
   acceptRanges?: 'bytes';
 }
+// Provider headers may contain signed URLs; expose fixed reason categories only.
+export function audioProviderReason(header: unknown): string {
+  if (typeof header !== 'string') return 'UNSPECIFIED';
+  const value = header.slice(0, 4096).toLowerCase();
+  if (value.includes('signature')) return 'SIGNATURE_REJECTED';
+  if (value.includes('not found') || value.includes('does not exist')) return 'RESOURCE_NOT_FOUND';
+  if (value.includes('token')) return 'TOKEN_REJECTED';
+  if (/acl|access denied|access control|not authorized|not allowed|restricted|denied/.test(value)) return 'ACCESS_RESTRICTED';
+  if (value.includes('cloud name') || value.includes('account')) return 'ACCOUNT_CONFIGURATION';
+  return 'UNSPECIFIED';
+}
 @Injectable()
 export class CloudinaryAudioGateway {
   private readonly logger = new Logger(CloudinaryAudioGateway.name);
@@ -25,10 +36,10 @@ export class CloudinaryAudioGateway {
     const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy;
     return new Promise((resolve, reject) => {
       let settled = false;
-      const fail = (code: string, status?: number) => {
+      const fail = (code: string, status?: number, reason?: string) => {
         if (settled) return;
         settled = true;
-        this.logger.warn(`Audio delivery failed: asset=${asset.id}; code=${code}${status === undefined ? '' : `; providerStatus=${status}`}`);
+        this.logger.warn(`Audio delivery failed: asset=${asset.id}; code=${code}${status === undefined ? '' : `; providerStatus=${status}`}${reason ? `; providerReason=${reason}` : ''}`);
         reject(new BadGatewayException('Audio provider is unavailable'));
       };
       // No automatic redirects, cookies, access JWTs, or client-supplied hosts reach the provider.
@@ -39,7 +50,7 @@ export class CloudinaryAudioGateway {
         const validLength = length === undefined || /^\d+$/.test(length) && Number(length) <= asset.bytes;
         const match = typeof contentRange === 'string' ? /^bytes (\d+)-(\d+)\/(\d+)$/.exec(contentRange) : null;
         const validRange = match && Number(match[1]) <= Number(match[2]) && Number(match[2]) < Number(match[3]) && Number(match[3]) === asset.bytes && (length === undefined || Number(length) === Number(match[2]) - Number(match[1]) + 1);
-        if (![200, 206, 416].includes(status ?? 0)) { response.destroy(); fail('PROVIDER_HTTP', status); return; }
+        if (![200, 206, 416].includes(status ?? 0)) { response.destroy(); fail('PROVIDER_HTTP', status, audioProviderReason(response.headers['x-cld-error'])); return; }
         if ((status !== 416 && !validLength) || (status === 206 && !validRange) || (range && status === 200) || (status === 416 && contentRange !== `bytes */${asset.bytes}`)) { response.destroy(); fail(range && status === 200 ? 'RANGE_IGNORED' : 'INVALID_RANGE_OR_LENGTH', status); return; }
         settled = true;
         resolve({ stream: response, status: status as AudioUpstream['status'], contentType: asset.format === 'mp3' ? 'audio/mpeg' : 'audio/mp4', contentLength: length, contentRange, acceptRanges: status === 206 || response.headers['accept-ranges'] === 'bytes' ? 'bytes' : undefined });
