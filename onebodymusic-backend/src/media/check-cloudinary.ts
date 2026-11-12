@@ -35,7 +35,27 @@ async function main(): Promise<void> {
         console.error(`Authenticated audio ${label} failed. Check the safe delivery code above (or network/connect timeout).`);
       }
     }
-    if (failures) process.exitCode = 1;
+    if (failures) {
+      console.log('Comparing the SDK standard signed URL (read-only; production playback is unchanged).');
+      const standardClient = new CloudinaryClient(settings);
+      standardClient.internalAudioUrl = (audio) => client.internalAudioUrl(audio, 'standard');
+      const standardGateway = new CloudinaryAudioGateway(standardClient, settings);
+      let standardFailures = 0;
+      for (const [label, range, head] of [['HEAD', undefined, true], ['one-byte range', 'bytes=0-0', false]] as const) {
+        try {
+          const result = await standardGateway.open(asset, range, head, AbortSignal.timeout(15000));
+          result.stream.destroy();
+          console.log(`Standard signature ${label} succeeded: HTTP ${result.status}.`);
+        } catch {
+          standardFailures++;
+          console.error(`Standard signature ${label} failed.`);
+        }
+      }
+      console.log(standardFailures === 0
+        ? 'Standard signed delivery works while long signed delivery fails. Signature compatibility is isolated; no file or account setting was changed.'
+        : 'Both signature formats failed. Signature length alone does not explain this rejection.');
+      process.exitCode = 1;
+    }
   } finally { await database.close(); }
 }
 void main().catch((error: unknown) => {

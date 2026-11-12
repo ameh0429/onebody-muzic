@@ -89,6 +89,14 @@ describe('Cloudinary authenticated-delivery boundary', () => {
     expect(new CloudinaryClient(config).internalAudioUrl(asset)).toContain('/video/authenticated/');
     expect(cloudinary.url).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({ type: 'authenticated', resource_type: 'video', secure: true, sign_url: true, auth_token: false }));
   });
+  it('can compare the standard SDK signature without enabling public or unsigned delivery', () => {
+    const asset = audioAsset();
+    new CloudinaryClient(config).internalAudioUrl(asset, 'standard');
+    expect(cloudinary.url).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({
+      type: 'authenticated', resource_type: 'video', sign_url: true, long_url_signature: false,
+      signature_algorithm: 'sha1', auth_token: false,
+    }));
+  });
   it('refuses storage keys outside the server-owned namespace', async () => {
     const asset = audioAsset(); asset.publicId = 'someone-elses-file';
     await expect(new CloudinaryClient(config).destroy(asset)).rejects.toThrow('Invalid media storage record'); expect(destroy).not.toHaveBeenCalled();
