@@ -8,6 +8,8 @@ export class AlbumArtistDto {
 }
 
 export class AlbumSongDto {
+  @ApiProperty({ type: String, nullable: true, description: 'Song artwork URL, or null when unset.' })
+  coverImageUrl!: string | null;
   @ApiProperty({ format: 'uuid' })
   id!: string;
   @ApiProperty({ example: 'Amazing Grace' })

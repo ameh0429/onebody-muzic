@@ -22,11 +22,11 @@ async function main() {
   const admin = await User.create({name:'Grace Admin',email:emails[0],passwordHash,role:Role.ADMIN,status:UserStatus.ACTIVE});
   await User.create({name:'James Member',email:emails[1],passwordHash,role:Role.MEMBER,status:UserStatus.ACTIVE});
   artist = await Artist.create({ name:`The Worship Collective ${suffix}`, biography:'A community of voices, joined in worship.' });
-  album = await Album.create({title:'Songs for the Journey',artistId:artist.id,releaseYear:2026});
+  album = await Album.create({title:'Songs for the Journey',artistId:artist.id,releaseYear:2026,coverImageUrl:'https://artwork.example.test/album.png'});
   for (const title of ['Amazing Grace','Great Is Your Faithfulness']) {
     const id=randomUUID(); const publicId=`onebodymusic/audio/${id}`;
     await MediaAsset.create({id,kind:MediaKind.AUDIO,status:MediaStatus.READY,folder:'onebodymusic/audio',publicId,resourceType:'video',deliveryType:'authenticated',format:'mp3',mimeType:'audio/mpeg',bytes:1,duration:241,width:null,height:null,uploadedById:admin.id});uploadedArtistAssets.push(id);
-    songs.push(await Song.create({title,artistId:artist.id,albumId:album.id,uploadedById:admin.id,category:'Worship',lyrics:'Verse 1\nAmazing grace, how sweet the sound\n\nChorus\nWe sing together.',audioAssetId:id,audioPublicId:publicId,audioResourceType:'video',durationSeconds:241}));
+    songs.push(await Song.create({title,artistId:artist.id,albumId:album.id,uploadedById:admin.id,category:'Worship',coverImageUrl:title==='Amazing Grace'?'https://artwork.example.test/song.png':null,lyrics:'Verse 1\nAmazing grace, how sweet the sound\n\nChorus\nWe sing together.',audioAssetId:id,audioPublicId:publicId,audioResourceType:'video',durationSeconds:241}));
   }
   const set = await Playlist.create({title:'Sunday worship',type:PlaylistType.REHEARSAL,publicationStatus:PlaylistPublicationStatus.PUBLISHED,createdById:admin.id});
   const event = await Rehearsal.create({title:'Sunday choir practice',scheduledAt:new Date('2099-12-01T16:00:00Z'),playlistId:set.id,createdById:admin.id});
@@ -37,12 +37,20 @@ async function main() {
   const context = await browser.newContext({viewport:{width:1440,height:1000}}); page = await context.newPage(); page.on('dialog', (dialog) => void dialog.accept()); const errors = []; page.on('pageerror',(e)=>errors.push(e.message));
   const base = `http://127.0.0.1:${webPort}`; const go = async (path) => { await page.evaluate((path)=>{history.pushState({},'',path);dispatchEvent(new PopStateEvent('popstate'));},path); await page.waitForTimeout(250); };
   const login = async (email) => { await page.getByLabel('Email address').fill(email); await page.getByLabel('Password',{exact:true}).fill(password); await page.getByRole('button',{name:'Sign in',exact:true}).click(); await page.getByRole('heading',{name:/Hello,/}).waitFor(); };
+  await page.route('https://artwork.example.test/**',r=>r.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=','base64')}));
   await page.goto(`${base}/admin`); await page.getByRole('heading',{name:'Welcome back.'}).waitFor(); checks.push('anonymous protected route redirects to login');
   await page.getByRole('link',{name:'Create an account'}).click(); await page.getByLabel('Full name').fill('New Choir Member'); await page.getByLabel('Email address').fill(emails[2]); await page.getByLabel('Password',{exact:true}).fill(password); await page.getByLabel('Confirm password').fill(password); await page.getByRole('button',{name:'Create account',exact:true}).click(); await page.getByRole('heading',{name:'You’re on the list.'}).waitFor();
   assert.equal((await User.findOne({where:{email:emails[2]}})).status,'PENDING'); await page.getByRole('link',{name:'Back to sign in'}).click(); checks.push('registration creates pending account with approval guidance');
   await login(emails[0]); await page.getByText('Amazing Grace',{exact:true}).first().waitFor(); await page.screenshot({path:'/tmp/onebodymusic-desktop.png',fullPage:true}); checks.push('admin login and live dashboard');
   for (const [path,heading] of [['/songs','Music library'],[`/songs/${songs[0].id}`,'Amazing Grace'],['/artists','Voices of worship'],[`/artists/${artist.id}`,artist.name],['/albums','Albums'],[`/albums/${album.id}`,album.title],['/playlists','Your playlists'],['/rehearsals','Rehearsals'],[`/rehearsals/${event.id}`,event.title],['/profile','Your profile'],['/admin','Admin workspace'],['/admin/upload','Add to the library']]) { await go(path); await page.getByRole('heading',{name:heading,exact:true}).first().waitFor(); }
   checks.push('all library, details, profile, rehearsal and admin screens render against real API');
+  await go(`/albums/${album.id}`);
+  assert.equal(await page.locator('.song-row').nth(0).locator('img').getAttribute('src'),'https://artwork.example.test/song.png');
+  assert.equal(await page.locator('.song-row').nth(1).locator('img').getAttribute('src'),'https://artwork.example.test/album.png');
+  await go(`/artists/${artist.id}`);
+  assert.equal(await page.locator('.song-row').filter({hasText:'Amazing Grace'}).locator('img').getAttribute('src'),'https://artwork.example.test/song.png');
+  checks.push('album song rows show song artwork or album-cover fallback; artist song rows show song artwork');
+
   await go(`/songs/${songs[0].id}`);
   const waveform=Buffer.alloc(44+16000*30);waveform.write('RIFF');waveform.writeUInt32LE(waveform.length-8,4);waveform.write('WAVEfmt ',8);waveform.writeUInt32LE(16,16);waveform.writeUInt16LE(1,20);waveform.writeUInt16LE(1,22);waveform.writeUInt32LE(8000,24);waveform.writeUInt32LE(16000,28);waveform.writeUInt16LE(2,32);waveform.writeUInt16LE(16,34);waveform.write('data',36);waveform.writeUInt32LE(waveform.length-44,40);
   let ticketRequests=0;

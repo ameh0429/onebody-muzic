@@ -65,9 +65,12 @@ test('compiled Albums API with PostgreSQL constraints and song associations', as
       assert.equal((await call(`albums/${randomUUID()}`, 'GET', memberToken)).status, 404);
     });
     await t.test('includes songs, blocks artist reassignment and prevents populated deletion at API and database levels', async () => {
-      const song = await Song.create({ title: 'Amazing Grace', artistId: a.id, albumId: primaryId, uploadedById: member.id, category: 'Worship', durationSeconds: 240, audioPublicId: suffix, audioResourceType: 'video' });
+      const song = await Song.create({ title: 'Amazing Grace', artistId: a.id, albumId: primaryId, uploadedById: member.id, category: 'Worship', durationSeconds: 240, coverImageUrl: 'https://artwork.example.test/song.png', audioPublicId: suffix, audioResourceType: 'video' });
       const response = await call(`albums/${primaryId}`, 'GET', memberToken); assert.equal(response.status, 200);
-      const body = await response.json() as AlbumDetailResponseDto; assert.equal(body.songCount, 1); assert.equal(body.songs[0]?.id, song.id); assert.equal(body.songs[0]?.title, 'Amazing Grace'); assert.equal(JSON.stringify(body).includes('audioPublicId'), false);
+      const body = await response.json() as AlbumDetailResponseDto; assert.equal(body.songCount, 1); assert.equal(body.songs[0]?.id, song.id); assert.equal(body.songs[0]?.title, 'Amazing Grace'); assert.equal(body.songs[0]?.coverImageUrl, 'https://artwork.example.test/song.png');
+      await song.update({ coverImageUrl: null });
+      const withoutArt = await call(`albums/${primaryId}`, 'GET', memberToken);
+      assert.equal((await withoutArt.json() as AlbumDetailResponseDto).songs[0]?.coverImageUrl, null); assert.equal(JSON.stringify(body).includes('audioPublicId'), false);
       assert.equal((await call(`albums/${primaryId}`, 'PATCH', adminToken, { artistId: b.id })).status, 409);
       assert.equal((await call(`albums/${primaryId}`, 'DELETE', adminToken)).status, 409);
       await assert.rejects(Album.destroy({ where: { id: primaryId } }), ForeignKeyConstraintError);
