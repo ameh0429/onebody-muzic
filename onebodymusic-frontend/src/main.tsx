@@ -1,0 +1,10 @@
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './features/auth/AuthProvider';
+import { queryClient } from './lib/query';
+import App from './app/App';
+import PwaPrompt from './components/PwaPrompt';
+import './styles.css';
+createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}><ErrorBoundary><AuthProvider><App/><PwaPrompt/></AuthProvider></ErrorBoundary></QueryClientProvider></StrictMode>);

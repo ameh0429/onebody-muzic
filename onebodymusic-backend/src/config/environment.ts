@@ -2,6 +2,9 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @Type(() => Number) @IsInt() @Min(5) @Max(300)
+  MEDIA_UPLOAD_TIMEOUT_SECONDS: number = 90;
+
   @Type(() => Number) @IsInt() @Min(1) @Max(100)
   AUTH_LOGIN_MAX_ATTEMPTS: number = 10;
 

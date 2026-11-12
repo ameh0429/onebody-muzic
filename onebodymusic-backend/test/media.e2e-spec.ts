@@ -1,3 +1,4 @@
+import { CloudinaryOperationError } from '../src/media/errors/media-operation.error';
 import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
 import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
 import { PlaylistsService } from '../src/playlists/playlists.service';
@@ -54,6 +55,12 @@ describe('Admin multipart media uploads', () => {
     provider.upload.mockImplementation(async (buffer: Buffer, asset: MediaAsset) => ({ bytes: buffer.length, format: asset.format, width: asset.resourceType === 'image' ? 1 : null, height: asset.resourceType === 'image' ? 1 : null, duration: asset.resourceType === 'video' ? 2 : null }));
   });
   afterAll(async () => { await app?.close(); });
+  it('returns actionable safe timeout diagnostics and defers uncertain cleanup', async () => {
+    provider.upload.mockRejectedValueOnce(new CloudinaryOperationError('TIMEOUT'));
+    const response = await request(app.getHttpServer()).post('/api/v1/media/audio').set('Authorization', bearer(adminId)).attach('file', mp3(), 'song.mp3').expect(504);
+    expect(response.body as object).toMatchObject({ statusCode: 504, message: expect.stringContaining('Cloudinary did not respond') });
+    expect(provider.destroy).not.toHaveBeenCalled();
+  });
   it('rejects unauthorized and member uploads/deletions before parsing files', async () => {
     for (const path of ['audio', 'images']) {
       await request(app.getHttpServer()).post(`/api/v1/media/${path}`).attach('file', PNG, 'cover.png').expect(401);

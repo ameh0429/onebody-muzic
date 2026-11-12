@@ -29,7 +29,7 @@ describe('startup configuration validation', () => {
     expect(() => validateEnvironment({ ...base, MEDIA_ENABLED: 'true' })).toThrow('CLOUDINARY');
     expect(validateEnvironment({ ...base, MEDIA_ENABLED: 'true', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: 'test-key', CLOUDINARY_API_SECRET: 'test-secret' }).MEDIA_ENABLED).toBe('true');
   });
-  it.each([{ MEDIA_AUDIO_MAX_BYTES: '0' }, { MEDIA_IMAGE_MAX_BYTES: '999999999' }, { MEDIA_MAX_CONCURRENT_UPLOADS: '0' }, { MEDIA_STALE_UPLOAD_SECONDS: '30' }])('rejects invalid media bounds %j', (values) => {
+  it.each([{ MEDIA_UPLOAD_TIMEOUT_SECONDS: '0' }, { MEDIA_UPLOAD_TIMEOUT_SECONDS: '301' }, { MEDIA_AUDIO_MAX_BYTES: '0' }, { MEDIA_IMAGE_MAX_BYTES: '999999999' }, { MEDIA_MAX_CONCURRENT_UPLOADS: '0' }, { MEDIA_STALE_UPLOAD_SECONDS: '30' }])('rejects invalid media bounds %j', (values) => {
     expect(() => validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173', ...values })).toThrow('MEDIA_');
   });
   it.each(['0', '14', '301', 'x'])('rejects unsafe playback TTL %s', (MEDIA_PLAYBACK_TTL_SECONDS) => {
