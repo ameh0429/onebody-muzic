@@ -951,3 +951,10 @@ safe delivery diagnostics during ordinary playback:
 
 Do not change ticket expiry to repair provider delivery errors. A successful song
 check verifies access and range headers, but does not establish browser codec support.
+
+Authenticated audio delivery uses the standard SDK URL signature (`sign_url: true`,
+`long_url_signature: false`, SHA-1). Live diagnosis verified HEAD 200 and byte-range
+206 with this format where the previous long signature returned 401. Audio stays
+authenticated; provider URLs remain internal and browser playback still requires
+a short-lived application ticket. This change requires a backend restart/rebuild,
+not a database migration or audio re-upload.

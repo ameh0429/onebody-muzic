@@ -65,11 +65,12 @@ export class CloudinaryClient {
     }));
     if (typeof response !== 'object' || response === null || !('status' in response) || response.status !== 'ok') throw new CloudinaryOperationError('INVALID_RESPONSE');
   }
+  // Standard signatures were verified against authenticated audio delivery; long signatures returned 401.
   // Non-expiring provider signatures stay inside the server; browser tickets enforce expiry at the gateway.
-  internalAudioUrl(asset: MediaAsset, signature: 'long' | 'standard' = 'long'): string {
+  internalAudioUrl(asset: MediaAsset): string {
     const options = this.options(asset);
     if (asset.kind !== MediaKind.AUDIO) throw new ServiceUnavailableException('Audio media is required');
-    return cloudinary.url(asset.publicId, { cloud_name: options.cloud_name, api_secret: options.api_secret, resource_type: 'video', type: 'authenticated', format: asset.format, secure: true, sign_url: true, long_url_signature: signature === 'long', signature_algorithm: 'sha1', auth_token: false });
+    return cloudinary.url(asset.publicId, { cloud_name: options.cloud_name, api_secret: options.api_secret, resource_type: 'video', type: 'authenticated', format: asset.format, secure: true, sign_url: true, long_url_signature: false, signature_algorithm: 'sha1', auth_token: false });
   }
   imageUrl(asset: MediaAsset): string | null {
     if (asset.kind !== MediaKind.IMAGE) return null;
