@@ -39,8 +39,13 @@ export class CloudinaryClient {
         const video: unknown = result.video;
         const audio: unknown = result.audio;
         const validAudio = typeof audio === 'object' && audio !== null && 'codec' in audio && typeof audio.codec === 'string';
+        // Cloudinary reports embedded JPEG/PNG audio cover art in its video field.
+        // FileInspector already validates the MP3 frames / audio-only M4A container.
+        const embeddedArtwork = typeof video === 'object' && video !== null && 'codec' in video
+          && typeof video.codec === 'string' && ['mjpeg', 'png'].includes(video.codec);
+        const unexpectedVideo = video && typeof video === 'object' && Object.keys(video).length > 0 && !embeddedArtwork;
         const validImage = Number.isInteger(result.width) && result.width > 0 && Number.isInteger(result.height) && result.height > 0;
-        if (result.public_id !== asset.publicId || result.resource_type !== asset.resourceType || result.type !== asset.deliveryType || result.format !== asset.format || result.bytes !== buffer.length || (asset.kind === MediaKind.AUDIO && (!validAudio || (video && typeof video === 'object' && Object.keys(video).length > 0))) || (asset.kind === MediaKind.IMAGE && !validImage)) { reject(new CloudinaryOperationError('INVALID_RESPONSE')); return; }
+        if (result.public_id !== asset.publicId || result.resource_type !== asset.resourceType || result.type !== asset.deliveryType || result.format !== asset.format || result.bytes !== buffer.length || (asset.kind === MediaKind.AUDIO && (!validAudio || unexpectedVideo)) || (asset.kind === MediaKind.IMAGE && !validImage)) { reject(new CloudinaryOperationError('INVALID_RESPONSE')); return; }
         resolve({ bytes: result.bytes, format: result.format, width: asset.kind === MediaKind.IMAGE ? result.width : null, height: asset.kind === MediaKind.IMAGE ? result.height : null, duration: asset.kind === MediaKind.AUDIO && typeof duration === 'number' && Number.isFinite(duration) ? duration : null });
       });
       stream.on('error', (error: unknown) => reject(classifyCloudinaryError(error)));
