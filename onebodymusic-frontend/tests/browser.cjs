@@ -10,7 +10,7 @@ const { createServer } = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright');
 const backend = resolve(__dirname, '../../onebodymusic-backend'); const req = createRequire(`${backend}/package.json`); req('reflect-metadata');
-const { createDatabase } = req('./dist/database/connection'); const { Artist, Album, Song, Playlist, Rehearsal, MediaAsset, MediaKind, MediaStatus, User, Role, UserStatus, PlaylistType, PlaylistPublicationStatus } = req('./dist/database/models'); const { hash } = req('argon2');
+const { createDatabase } = req('./dist/database/connection'); const { Artist, Album, Song, Playlist, PlaylistSong, Rehearsal, MediaAsset, MediaKind, MediaStatus, User, Role, UserStatus, PlaylistType, PlaylistPublicationStatus } = req('./dist/database/models'); const { hash } = req('argon2');
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error('TEST_DATABASE_URL must point to a dedicated migrated test database.');
 async function port() { const socket = createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening'); const n = socket.address().port; await new Promise((r) => socket.close(r)); return n; }
@@ -162,6 +162,8 @@ async function main() {
   checks.push('logout clears the cookie across tabs and a page refresh cannot restore the revoked session');
 
   await login(emails[1]); await go('/admin/upload'); await page.getByRole('heading',{name:/Hello,/}).waitFor(); assert.equal(await page.getByRole('link',{name:'Admin workspace',exact:true}).count(),0); checks.push('profile update, logout and member admin-route restriction');
+  for(const [resource,item] of [['songs',songs[0]],['albums',album],['artists',artist]]){await go(`/${resource}/${item.id}`);await page.getByRole('heading',{name:item.title||item.name,exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:`Delete ${resource.slice(0,-1)}`,exact:true}).count(),0);}
+  checks.push('members cannot see delete buttons on song, album or artist details');
   await go('/playlists'); await page.getByLabel('Playlist name').fill(`My practice ${suffix}`); await page.getByRole('button',{name:'Create playlist'}).click(); await page.getByRole('heading',{name:`My practice ${suffix}`}).waitFor();
   await page.getByRole('button',{name:'Add',exact:true}).first().click(); await page.getByRole('button',{name:'Added',exact:true}).waitFor(); await page.getByRole('button',{name:'Add',exact:true}).first().click(); const firstTitle=await page.locator('.song-row').first().locator('strong').innerText();
   await page.getByRole('button',{name:`Move ${firstTitle} down`}).click(); await page.waitForTimeout(400); checks.push('personal playlist create, add songs and reorder');
@@ -285,6 +287,24 @@ async function main() {
   await page.locator('input[name=file]').setInputFiles({name:'practice.mp3',mimeType:'audio/mpeg',buffer:Buffer.from('test audio fixture')});
   await page.getByRole('button',{name:'Upload & publish song'}).click(); await page.getByRole('alert').filter({hasText:'Song could not be saved'}).waitFor(); assert.equal(compensated,true); checks.push('failed song save requests deletion of uploaded asset (controlled media responses)');
   await page.unrouteAll({behavior:'wait'});
+  const deletionArtist=await Artist.create({name:`Delete Artist ${suffix}`});extraArtistIds.push(deletionArtist.id);
+  const deletionAlbum=await Album.create({title:`Delete Album ${suffix}`,artistId:deletionArtist.id,releaseYear:2026});extraAlbumIds.push(deletionAlbum.id);
+  const deletionAudioId=randomUUID();const deletionPublicId=`onebodymusic/audio/${deletionAudioId}`;
+  await MediaAsset.create({id:deletionAudioId,kind:MediaKind.AUDIO,status:MediaStatus.READY,folder:'onebodymusic/audio',publicId:deletionPublicId,resourceType:'video',deliveryType:'authenticated',format:'mp3',mimeType:'audio/mpeg',bytes:1,duration:30,width:null,height:null,uploadedById:admin.id});uploadedArtistAssets.push(deletionAudioId);
+  const deletionSong=await Song.create({title:`Delete Song ${suffix}`,artistId:deletionArtist.id,albumId:deletionAlbum.id,uploadedById:admin.id,audioAssetId:deletionAudioId,audioPublicId:deletionPublicId,audioResourceType:'video',durationSeconds:30});
+  const deletionPlaylist=await Playlist.create({title:`Delete protection ${suffix}`,createdById:admin.id});await PlaylistSong.create({playlistId:deletionPlaylist.id,songId:deletionSong.id,position:0});
+  for(const [resource,item,hint] of [['artists',deletionArtist,'featured credits'],['albums',deletionAlbum,'move the songs'],['songs',deletionSong,'playlists'],['artists',guestA,'featured credits']]){await go(`/${resource}/${item.id}`);await page.getByRole('button',{name:`Delete ${resource.slice(0,-1)}`,exact:true}).click();await page.getByRole('alert').filter({hasText:hint}).waitFor();assert.ok(await ({artists:Artist,albums:Album,songs:Song}[resource]).findByPk(item.id));}
+  await go(`/songs/${deletionSong.id}`);
+  page.removeAllListeners('dialog');page.once('dialog',dialog=>void dialog.dismiss());await page.getByRole('button',{name:'Delete song',exact:true}).click();assert.ok(await Song.findByPk(deletionSong.id));page.on('dialog',dialog=>void dialog.accept());
+  await PlaylistSong.destroy({where:{playlistId:deletionPlaylist.id}});await Playlist.destroy({where:{id:deletionPlaylist.id}});
+  await page.route(`**/api/v1/songs/${deletionSong.id}/stream?redirect=false`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({url:`/api/v1/songs/${deletionSong.id}/stream?ticket=delete-player-probe`,expiresIn:60})}));
+  await page.route(`**/api/v1/songs/${deletionSong.id}/stream?ticket=*`,route=>route.fulfill({status:200,contentType:'audio/wav',body:waveform}));
+  await page.getByRole('button',{name:'Load audio',exact:true}).click();await page.waitForFunction(()=>!!document.querySelector('audio')?.getAttribute('src'));await page.getByRole('button',{name:'Play audio',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('audio').paused);
+  const deleteAudio=await page.locator('audio').elementHandle();await page.getByRole('button',{name:'Delete song',exact:true}).click();await page.getByRole('status').filter({hasText:`“${deletionSong.title}” was deleted.`}).waitFor();assert.equal(await Song.findByPk(deletionSong.id),null);assert.equal(await deleteAudio.evaluate(el=>el.paused&&!el.getAttribute('src')),true);assert.equal(await page.locator('.song-row').filter({hasText:deletionSong.title}).count(),0);
+  await go(`/albums/${deletionAlbum.id}`);await page.route(`**/api/v1/albums/${deletionAlbum.id}`,route=>route.request().method()==='DELETE'?route.abort():route.continue());await page.getByRole('button',{name:'Delete album',exact:true}).click();await page.getByRole('alert').filter({hasText:'Unable to connect'}).waitFor();assert.ok(await Album.findByPk(deletionAlbum.id));await page.unroute(`**/api/v1/albums/${deletionAlbum.id}`);
+  for(const [resource,item,model] of [['albums',deletionAlbum,Album],['artists',deletionArtist,Artist]]){await go(`/${resource}/${item.id}`);await page.getByRole('button',{name:`Delete ${resource.slice(0,-1)}`,exact:true}).click();await page.getByRole('status').filter({hasText:`“${item.title||item.name}” was deleted.`}).waitFor();assert.equal(await model.findByPk(item.id),null);}
+  await page.unrouteAll({behavior:'wait'});
+  checks.push('admin delete: dependency conflicts, featured credits, confirmation cancellation, network failure/retry, song→album→artist deletion, refreshed lists and stopping deleted audio');
   for(const width of [320,768]) { await page.setViewportSize({width,height:900});for(const path of ['/','/songs',`/songs/${songs[0].id}`,'/artists',`/artists/${artist.id}`,'/albums',`/albums/${album.id}`,'/playlists','/rehearsals','/profile','/admin','/admin/upload']) {await go(path);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`overflow: ${width} ${path}`);}}
   checks.push('additional no-overflow checks at 320px and 768px');
   const manifest=await(await fetch(`${base}/manifest.webmanifest`)).json();assert.equal(manifest.display,'standalone');assert.equal(manifest.icons.length,2);

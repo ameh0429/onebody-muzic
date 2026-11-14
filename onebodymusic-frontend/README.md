@@ -325,3 +325,17 @@ details link to profiles. Profiles separate **Songs by this artist** and
 **Featured on**. Credits also appear in the library, dashboard, album tracks,
 playlists, rehearsal setlists, player, and supported lock-screen metadata.
 Apply backend migration `011-song-featured-artists` before deploying this frontend.
+
+### Delete songs, albums and artists
+
+Administrators can open an item's detail page and choose **Delete song**,
+**Delete album**, or **Delete artist**. The confirmation names the item and warns
+that deletion cannot be undone. Cancel leaves the item unchanged. Successful
+deletion returns to the corresponding library list with a confirmation message;
+deleting the selected song also stops its player.
+
+The API preserves relationship protections: remove a song from playlists first;
+empty an album by deleting or moving its songs; remove an artist's albums, main
+songs and featured credits first. Blocked deletions display guidance without
+removing related records. Members do not see deletion controls, and the API
+continues to enforce administrator access independently.

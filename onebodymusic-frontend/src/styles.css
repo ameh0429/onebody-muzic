@@ -44,3 +44,5 @@
 .auth-story .brand { color:#faf7ff; }
 .auth-story .eyebrow { color:#ffbc9b; }
 .auth-form { background:var(--bg); }
+
+:root[data-theme=dark] .library-delete .btn.danger { color:#ffb4b4; border-color:#ffb4b480; }
