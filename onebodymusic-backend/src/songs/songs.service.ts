@@ -2,8 +2,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import { Readable } from 'node:stream';
 import { Sequelize } from 'sequelize-typescript';
-import { ForeignKeyConstraintError, Op, Transaction, UniqueConstraintError, WhereOptions } from 'sequelize';
-import { Album, Artist, MediaAsset, MediaKind, MediaStatus, Song } from '../database/models';
+import { ForeignKeyConstraintError, literal, Op, Transaction, UniqueConstraintError, WhereOptions } from 'sequelize';
+import { Album, Artist, MediaAsset, MediaKind, MediaStatus, Song, SongFeaturedArtist, FEATURED_CREDITS_INCLUDE, featuredArtists } from '../database/models';
 import { MediaService } from '../media/media.service';
 import { CloudinaryClient } from '../media/cloudinary.client';
 import { AudioUpstream, CloudinaryAudioGateway } from '../media/cloudinary-audio.gateway';
@@ -14,7 +14,7 @@ import { SongDetailResponseDto, SongResponseDto, SongsPageDto } from './dto/song
 import { PlaybackTicketsService } from './playback-tickets.service';
 import { PlaybackResponseDto } from './dto/playback.dto';
 
-const INCLUDES = [{ model: Artist, as: 'artist', attributes: ['id', 'name'], required: true }, { model: Album, as: 'album', attributes: ['id', 'title', 'releaseYear'], required: false }];
+const INCLUDES = [{ model: Artist, as: 'artist', attributes: ['id', 'name'], required: true }, { model: Album, as: 'album', attributes: ['id', 'title', 'releaseYear'], required: false }, FEATURED_CREDITS_INCLUDE];
 
 @Injectable()
 export class SongsService {
@@ -23,10 +23,12 @@ export class SongsService {
   async create(dto: CreateSongDto, actorId: string): Promise<SongDetailResponseDto> {
     return this.write(async (transaction) => {
       await this.validateArtistAlbum(dto.artistId, dto.albumId ?? null, transaction);
+      await this.validateFeatured(dto.artistId, dto.featuredArtistIds ?? [], transaction);
       const audio = await this.asset(dto.audioAssetId, MediaKind.AUDIO, actorId, transaction);
       await this.assertUnusedAudio(audio, transaction);
       const cover = dto.coverAssetId ? await this.asset(dto.coverAssetId, MediaKind.IMAGE, actorId, transaction) : null;
       const song = await this.songs.create({ title: dto.title, artistId: dto.artistId, albumId: dto.albumId ?? null, category: dto.category ?? null, lyrics: dto.lyrics ?? null, audioAssetId: audio.id, audioPublicId: audio.publicId, audioResourceType: audio.resourceType, durationSeconds: this.duration(audio), uploadedById: actorId, coverAssetId: cover?.id ?? null, coverImagePublicId: cover?.publicId ?? null, coverImageUrl: cover ? this.cloudinary.imageUrl(cover) : null }, { transaction });
+      if (dto.featuredArtistIds?.length) await this.replaceFeatured(song.id, dto.featuredArtistIds, transaction);
       return this.detailResponse(await this.required(song.id, transaction, false, true));
     });
   }
@@ -34,6 +36,7 @@ export class SongsService {
   async list(query: ListSongsDto): Promise<SongsPageDto> {
     const where: WhereOptions<Song> = {};
     if (query.artistId) where.artistId = query.artistId;
+    if (query.featuredArtistId) where.id = { [Op.in]: literal(`(SELECT "songId" FROM "SongFeaturedArtist" WHERE "artistId" = ${this.database.escape(query.featuredArtistId)})`) };
     if (query.albumId) where.albumId = query.albumId;
     if (query.category) where.category = query.category;
     if (query.search) where.title = { [Op.iLike]: `%${query.search.replace(/[\\%_]/g, '\\$&')}%` };
@@ -49,6 +52,10 @@ export class SongsService {
       const artistId = dto.artistId ?? song.artistId;
       const albumId = dto.albumId === undefined ? song.albumId : dto.albumId;
       await this.validateArtistAlbum(artistId, albumId, transaction);
+      if (dto.featuredArtistIds !== undefined || dto.artistId !== undefined) {
+        const current = dto.featuredArtistIds ?? (await SongFeaturedArtist.findAll({ where: { songId: id }, transaction })).map(credit => credit.artistId);
+        await this.validateFeatured(artistId, current, transaction);
+      }
       const changes: Partial<Pick<Song, 'title' | 'artistId' | 'albumId' | 'category' | 'lyrics' | 'audioAssetId' | 'audioPublicId' | 'audioResourceType' | 'durationSeconds' | 'coverAssetId' | 'coverImageUrl' | 'coverImagePublicId'>> = {};
       if (dto.title !== undefined) changes.title = dto.title;
       if (dto.artistId !== undefined) changes.artistId = dto.artistId;
@@ -66,6 +73,7 @@ export class SongsService {
         Object.assign(changes, { coverAssetId: cover?.id ?? null, coverImagePublicId: cover?.publicId ?? null, coverImageUrl: cover ? this.cloudinary.imageUrl(cover) : null });
       }
       await song.update(changes, { transaction });
+      if (dto.featuredArtistIds !== undefined) await this.replaceFeatured(id, dto.featuredArtistIds, transaction);
       if (oldAudioId && changes.audioAssetId && oldAudioId !== changes.audioAssetId) await this.media.scheduleUnreferenced(oldAudioId, transaction);
       if (oldCoverId && dto.coverAssetId !== undefined && oldCoverId !== changes.coverAssetId) await this.media.scheduleUnreferenced(oldCoverId, transaction);
       return this.detailResponse(await this.required(id, transaction, false, true));
@@ -115,6 +123,17 @@ export class SongsService {
     }
     if (!await this.artists.findByPk(artistId, { attributes: ['id'], transaction, lock: transaction.LOCK.KEY_SHARE })) throw new NotFoundException('Artist not found');
   }
+  private async validateFeatured(mainId: string, ids: string[], transaction: Transaction): Promise<void> {
+    if (!Array.isArray(ids) || ids.length > 20 || new Set(ids.map(id => id.toLowerCase())).size !== ids.length) throw new BadRequestException('Choose up to 20 distinct featured artists');
+    if (ids.some(id => id.toLowerCase() === mainId.toLowerCase())) throw new BadRequestException('The main artist cannot also be a featured artist');
+    for (const id of [...ids].sort()) {
+      if (!await this.artists.findByPk(id, { attributes: ['id'], transaction, lock: transaction.LOCK.KEY_SHARE })) throw new NotFoundException('Featured artist not found');
+    }
+  }
+  private async replaceFeatured(songId: string, ids: string[], transaction: Transaction): Promise<void> {
+    await SongFeaturedArtist.destroy({ where: { songId }, transaction });
+    if (ids.length) await SongFeaturedArtist.bulkCreate(ids.map((artistId, position) => ({ songId, artistId, position })), { transaction });
+  }
   private async asset(id: string, kind: MediaKind, actorId: string, transaction: Transaction, currentId?: string | null): Promise<MediaAsset> {
     const asset = await this.assets.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!asset) throw new NotFoundException('Media asset not found');
@@ -149,6 +168,6 @@ export class SongsService {
   private detailResponse(song: Song): SongDetailResponseDto { return { ...this.response(song), lyrics: song.lyrics ?? null }; }
 
   private response(song: Song): SongResponseDto {
-    return { id: song.id, title: song.title, artistId: song.artistId, artist: { id: song.artist.id, name: song.artist.name }, albumId: song.albumId, album: song.album ? { id: song.album.id, title: song.album.title, releaseYear: song.album.releaseYear } : null, category: song.category, durationSeconds: song.durationSeconds, coverImageUrl: song.coverImageUrl, hasAudioAsset: Boolean(song.audioAssetId), createdAt: song.createdAt.toISOString(), updatedAt: song.updatedAt.toISOString() };
+    return { id: song.id, title: song.title, artistId: song.artistId, artist: { id: song.artist.id, name: song.artist.name }, featuredArtists: featuredArtists(song), albumId: song.albumId, album: song.album ? { id: song.album.id, title: song.album.title, releaseYear: song.album.releaseYear } : null, category: song.category, durationSeconds: song.durationSeconds, coverImageUrl: song.coverImageUrl, hasAudioAsset: Boolean(song.audioAssetId), createdAt: song.createdAt.toISOString(), updatedAt: song.updatedAt.toISOString() };
   }
 }

@@ -9,7 +9,7 @@ import { INestApplication, Type } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { hash, argon2id } from 'argon2';
 import { createDatabase } from '../src/database/connection';
-import { Album, Artist, MediaAsset, MediaKind, MediaStatus, Playlist, PlaylistSong, Role, Song, User, UserStatus } from '../src/database/models';
+import { Album, Artist, MediaAsset, MediaKind, MediaStatus, Playlist, PlaylistSong, Role, Song, SongFeaturedArtist, User, UserStatus } from '../src/database/models';
 import type { CloudinaryClient as ClientType } from '../src/media/cloudinary.client';
 import type { CloudinaryAudioGateway as GatewayType } from '../src/media/cloudinary-audio.gateway';
 import type { MediaCleanupWorker as WorkerType } from '../src/media/media-cleanup.worker';
@@ -78,6 +78,35 @@ test('Songs API with tracked media ownership, transactional cleanup, and range p
       assert.equal((await MediaAsset.findByPk(upload.id))?.status, MediaStatus.READY);
       assert.equal((await call(`media/${upload.id}`, 'DELETE', adminToken)).status, 409);
       assert.equal((await call('songs', 'POST', adminToken, input)).status, 409);
+    });
+    await t.test('validates featured credits on create and update without partial writes', async () => {
+      for (const featuredArtistIds of [[artist.id], [otherArtist.id, otherArtist.id.toUpperCase()], [randomUUID()], null, 'invalid', Array.from({ length: 21 }, () => randomUUID())]) {
+        const expected = Array.isArray(featuredArtistIds) && featuredArtistIds.length === 1 && featuredArtistIds[0] !== artist.id ? 404 : 400;
+        assert.equal((await call('songs', 'POST', adminToken, { ...input, featuredArtistIds })).status, expected);
+        assert.equal((await call(`songs/${primaryId}`, 'PATCH', adminToken, { title: 'Must not save', featuredArtistIds })).status, expected);
+      }
+      assert.equal((await Song.findByPk(primaryId))?.title, input.title);
+      assert.equal((await call(`songs/${primaryId}`, 'PATCH', memberToken, { featuredArtistIds: [otherArtist.id] })).status, 403);
+    });
+    await t.test('creates ordered featured credits, preserves omissions, filters and paginates without duplicate songs', async () => {
+      const third = await Artist.create({ name: `Guest ${suffix}` }); artistIds.push(third.id);
+      const freshAudio = await audio(adminToken);
+      const created = await call('songs', 'POST', adminToken, { ...input, title: `Collaboration ${suffix}`, audioAssetId: freshAudio.id, featuredArtistIds: [third.id, otherArtist.id] });
+      assert.equal(created.status, 201); const collaboration = await created.json() as SongResponseDto;
+      assert.deepEqual(collaboration.featuredArtists.map(credit => credit.id), [third.id, otherArtist.id]);
+      const patch = await call(`songs/${collaboration.id}`, 'PATCH', adminToken, { category: 'Praise' });
+      assert.deepEqual((await patch.json() as SongResponseDto).featuredArtists.map(credit => credit.id), [third.id, otherArtist.id]);
+      const listing = await call(`songs?featuredArtistId=${otherArtist.id}&limit=1`, 'GET', memberToken);
+      const page = await listing.json() as SongsPageDto; assert.equal(page.total, 1); assert.equal(page.data.length, 1); assert.equal(page.data[0]?.id, collaboration.id);
+      assert.deepEqual(page.data[0]?.featuredArtists.map(credit => credit.id), [third.id, otherArtist.id]);
+      assert.equal((await call(`artists/${third.id}`, 'DELETE', adminToken)).status, 409);
+      const movedMain = await call(`songs/${collaboration.id}`, 'PATCH', adminToken, { artistId: third.id, albumId: null }); assert.equal(movedMain.status, 400);
+      const changed = await call(`songs/${collaboration.id}`, 'PATCH', adminToken, { featuredArtistIds: [otherArtist.id, third.id] });
+      assert.deepEqual((await changed.json() as SongResponseDto).featuredArtists.map(credit => credit.id), [otherArtist.id, third.id]);
+      const cleared = await call(`songs/${collaboration.id}`, 'PATCH', adminToken, { featuredArtistIds: [] }); assert.equal(cleared.status, 200); assert.deepEqual((await cleared.json() as SongResponseDto).featuredArtists, []);
+      await call(`songs/${collaboration.id}`, 'PATCH', adminToken, { featuredArtistIds: [third.id] });
+      assert.equal((await call(`songs/${collaboration.id}`, 'DELETE', adminToken)).status, 204);
+      assert.equal(await SongFeaturedArtist.count({ where: { songId: collaboration.id } }), 0);
     });
     await t.test('persists exact lyrics, preserves omitted values, clears explicitly, and excludes list payloads', async () => {
       const lyrics = '  Amazing grace\r\n\r\nÌyìn Olúwa <chorus>  ';

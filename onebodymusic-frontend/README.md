@@ -309,3 +309,33 @@ third-party-cookie restrictions can still block it. Development defaults to Lax.
 
 Browser checks cover reload/new-tab restoration, credentialed cookies, renewal
 after an API 401, logout across tabs, and prevention of restoration after logout.
+
+### Featured artists
+
+In **Admin workspace → Add to the library**, choose the main **Artist**, then
+use **Add featured artist** to select optional guest artists. Selected artists
+appear in an ordered list; move them up/down or remove them before publishing.
+The main artist cannot also be featured. Create missing artists using the existing
+**Add a new artist** form, then select them as needed.
+
+For an existing song, open its detail page and expand **Edit featured artists**
+(administrators only). Save an empty selection to remove all guest credits.
+Song credits display as “Main artist feat. Guest & Guest”; artist names on song
+details link to profiles. Profiles separate **Songs by this artist** and
+**Featured on**. Credits also appear in the library, dashboard, album tracks,
+playlists, rehearsal setlists, player, and supported lock-screen metadata.
+Apply backend migration `011-song-featured-artists` before deploying this frontend.
+
+### Delete songs, albums and artists
+
+Administrators can open an item's detail page and choose **Delete song**,
+**Delete album**, or **Delete artist**. The confirmation names the item and warns
+that deletion cannot be undone. Cancel leaves the item unchanged. Successful
+deletion returns to the corresponding library list with a confirmation message;
+deleting the selected song also stops its player.
+
+The API preserves relationship protections: remove a song from playlists first;
+empty an album by deleting or moving its songs; remove an artist's albums, main
+songs and featured credits first. Blocked deletions display guidance without
+removing related records. Members do not see deletion controls, and the API
+continues to enforce administrator access independently.

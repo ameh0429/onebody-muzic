@@ -1,3 +1,4 @@
+import { creditText } from '../../components/SongCredits';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Pause, Play, RotateCw, X } from 'lucide-react';
@@ -7,6 +8,8 @@ import type { Song } from '../../lib/types';
 interface Player {
   song: Song | null; busy: boolean; error: string;
   prepare: (song: Song, play?: boolean, position?: number) => Promise<void>;
+  updateDetails: (song: Song) => void;
+  stopIfSelected: (id: string) => void;
   stop: () => void; refresh: () => void;
 }
 const Context = createContext<Player | null>(null);
@@ -62,7 +65,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
-    navigator.mediaSession.metadata = song && typeof MediaMetadata !== 'undefined' ? new MediaMetadata({ title: song.title, artist: song.artist.name, album: song.album?.title || '', artwork: song.coverImageUrl ? [{ src: song.coverImageUrl }] : [] }) : null;
+    navigator.mediaSession.metadata = song && typeof MediaMetadata !== 'undefined' ? new MediaMetadata({ title: song.title, artist: creditText(song.artist.name, song.featuredArtists), album: song.album?.title || '', artwork: song.coverImageUrl ? [{ src: song.coverImageUrl }] : [] }) : null;
     const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
       play: () => { if (audio.current?.paused) void toggle(); }, pause: () => audio.current?.pause(), stop,
       seekto: (details) => { if (details.seekTime !== undefined) seek(details.seekTime); },
@@ -84,9 +87,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     document.body.classList.toggle('has-player', !!song);
     return () => document.body.classList.remove('has-player');
   }, [song]);
-  return <Context.Provider value={{ song, busy, error, prepare, stop, refresh: () => { const track = current.current; if (track) { retried.current = false; void prepare(track, !audio.current?.paused, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); } } }}>{children}
+  return <Context.Provider value={{ song, busy, error, prepare, stop, stopIfSelected: id => { if (current.current?.id === id) stop(); }, updateDetails: next => { if (current.current?.id === next.id) { current.current = next; setSong(next); } }, refresh: () => { const track = current.current; if (track) { retried.current = false; void prepare(track, !audio.current?.paused, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); } } }}>{children}
     <section className="mini-player" aria-label="Now playing" hidden={!song}>
-      {song && <><div className="player-title"><Link to={`/songs/${song.id}`}><strong>{song.title}</strong><span>{song.artist.name}</span></Link></div>
+      {song && <><div className="player-title"><Link to={`/songs/${song.id}`}><strong>{song.title}</strong><span>{creditText(song.artist.name, song.featuredArtists)}</span></Link></div>
         <button className="icon-btn" aria-label={playing ? 'Pause audio' : 'Play audio'} disabled={busy} onClick={() => void toggle()}>{playing ? <Pause size={20}/> : <Play size={20}/>}</button>
         <button className="icon-btn" aria-label="Refresh playback access" disabled={busy} onClick={() => { retried.current = false; void prepare(song, playing, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); }}><RotateCw size={18}/></button>
         <button className="icon-btn" aria-label="Close player" onClick={stop}><X size={20}/></button></>}

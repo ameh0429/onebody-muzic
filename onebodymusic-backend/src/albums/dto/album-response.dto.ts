@@ -1,3 +1,4 @@
+import { SongArtistDto } from '../../songs/dto/song-response.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AlbumArtistDto {
@@ -8,6 +9,8 @@ export class AlbumArtistDto {
 }
 
 export class AlbumSongDto {
+  @ApiProperty({ type: [SongArtistDto] })
+  featuredArtists!: SongArtistDto[];
   @ApiProperty({ type: String, nullable: true, description: 'Song artwork URL, or null when unset.' })
   coverImageUrl!: string | null;
   @ApiProperty({ format: 'uuid' })

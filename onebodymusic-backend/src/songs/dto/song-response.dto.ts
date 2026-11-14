@@ -23,6 +23,8 @@ export class SongResponseDto {
   artistId!: string;
   @ApiProperty({ type: SongArtistDto })
   artist!: SongArtistDto;
+  @ApiProperty({ type: [SongArtistDto], description: 'Featured artists in credit order.' })
+  featuredArtists!: SongArtistDto[];
   @ApiProperty({ type: String, nullable: true, format: 'uuid' })
   albumId!: string | null;
   @ApiProperty({ type: SongAlbumDto, nullable: true })
