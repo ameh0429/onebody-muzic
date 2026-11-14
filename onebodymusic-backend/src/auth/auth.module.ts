@@ -28,6 +28,6 @@ import { JWT_AUDIENCE, JWT_ISSUER } from './auth.constants';
   ],
   controllers: [AuthController],
   providers: [AuthRateLimitGuard, AuthRateLimitStore, AuthService, AuthRepository, JwtStrategy, JwtAuthGuard, RolesGuard],
-  exports: [JwtAuthGuard, RolesGuard, AuthService],
+  exports: [AuthRateLimitStore, AuthRateLimitGuard, JwtAuthGuard, RolesGuard, AuthService],
 })
 export class AuthModule {}

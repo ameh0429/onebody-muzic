@@ -60,7 +60,7 @@ src/
   components/              Shared states, headings, covers, pagination,
                            paginated remote selectors, PWA prompt, error boundary
   features/
-    auth/                  Memory-only session, login, pending registration
+    auth/                  In-memory access JWT, HttpOnly session restoration, login, registration
     dashboard/             Recent songs and upcoming rehearsals
     library/               Songs, artists, albums, details, lyrics, audio playback
     playlists/             Personal/rehearsal sets, metadata, ordered song controls
@@ -104,15 +104,21 @@ required; artwork loads lazily when supplied by the backend.
 
 ## Authentication and data
 
-- Axios attaches the access JWT to API requests. Tokens and user/session data stay
-  in memory, never localStorage, sessionStorage, IndexedDB, or a service-worker
-  cache. **Reloading/reopening the app requires signing in again.** The current
-  backend has no refresh-token endpoint; the frontend does not invent one.
-- The app signs out at the configured access-token expiry and on API 401 responses.
-  Current account status and roles are rechecked on window focus and each minute;
-  the backend still checks permissions on every request. Query data is cleared on
-  logout and on identity changes. Admin guards are UI controls, not a replacement
-  for backend authorization.
+- Axios attaches a short-lived access JWT held only in memory. The backend keeps a
+  rotating refresh token in an HttpOnly cookie. Refreshing/reopening the app restores
+  the signed-in user while the 14-day session remains valid; no token or user data is
+  saved in localStorage, sessionStorage, IndexedDB, or a service-worker cache.
+- Access tokens renew before expiry and a protected API 401 can renew/retry once.
+  Current roles/status are checked on focus and every 30 seconds. Logout immediately
+  clears local identity, queries, audio and lock-screen metadata, then revokes the
+  server session and clears its cookie. Other tabs receive the logout signal.
+  A non-secret logout-pending flag is the only additional localStorage value; if
+  server logout fails, it prevents automatic restoration until revocation succeeds.
+- Session requests use credentials and a custom CSRF header. Web Locks serialize
+  refresh-cookie rotation across supported same-origin browser tabs, and a shared
+  in-flight request prevents duplicate renewal within a page. A replayed old refresh
+  token revokes that session family; simultaneous refreshes from older browsers
+  without Web Locks may require signing in again.
 - Lists use server pagination. Song/artist/album search is debounced; selector and
   playlist-picker searches are submitted explicitly. Query requests support abort
   signals, use a 60-second stale time, and do not automatically retry failures.
@@ -158,7 +164,7 @@ files, account data, uploads or playback tickets are stored. The offline shell c
 open, but sign-in, library access and music require a network connection. Lazy route
 chunks, local system fonts, paginated lists, lazy artwork and on-demand playback
 reduce network work. An available-update prompt allows deferral; applying an update
-reloads and requires signing in again. Finish uploads before applying an update.
+reloads; the session is restored when online. Finish uploads before applying an update.
 
 ## Verification
 
@@ -198,7 +204,7 @@ uploads/playback were not exercised** without provider credentials. The frontend
 production dependency audit reported zero advisories at implementation time.
 
 Frontend MVP scope does not include offline downloads, notifications, attendance,
-password recovery, refresh tokens, or full artist/album/song editing/deletion UIs.
+password recovery or full artist/album/song editing/deletion UIs.
 Those backend endpoints remain available through Swagger. The included admin flow
 covers creation/upload, account management, playlist management and scheduling.
 
@@ -213,3 +219,93 @@ Default request deadline is 120 seconds; configure
 `VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` at least 30 seconds above the backend upload
 deadline. Restart/rebuild after changing Vite environment variables. See the backend
 README troubleshooting section for local Windows networking, credentials and TLS.
+
+### Profile pictures
+
+On Profile, choose a JPEG, PNG or WebP image, review the preview, and select
+**Upload picture** (or **Replace picture**). **Cancel selection** keeps the saved
+picture, and **Remove picture** restores your initial avatar. The saved picture
+appears on Profile and in the header/sidebar, including after signing in again.
+Broken image links fall back to your initial. The default size limit is 5 MiB;
+`VITE_IMAGE_MAX_BYTES` should match the backend limit. Pictures use public image
+links. Uploads require the backend profile-picture migration and Cloudinary setup.
+
+The browser workflow also checks picture validation, preview/cancellation, upload,
+shared avatar updates and removal using controlled provider responses. Backend
+integration tests exercise the real API, database, ownership and cleanup with a
+provider test double; live Cloudinary uploads need provider credentials.
+
+### Artist photos
+
+In **Admin workspace → Add to the library**, expand **Add a new artist** and
+choose an optional **Artist photo** before selecting **Create artist**. To add
+or replace an existing artist’s photo, select the artist above, expand
+**Add or replace artist photo**, choose a file, and select **Save artist photo**.
+The preview lets you check the image before saving. Artist cards and details
+refresh after a successful save. Artist photos are separate from song artwork.
+
+JPEG, PNG and WebP use the configured image limit (5 MiB by default) and require
+Cloudinary-enabled media uploads. Photos upload to the fixed artists folder;
+failed artist saves request deletion of the unused upload. Replaced images
+become unreferenced and are collected by the existing staged-media cleanup worker.
+
+### Album covers
+
+In **Admin workspace → Add to the library**, select an artist, expand
+**Create an album**, and choose an optional **Album cover** before creating it.
+To add or replace an existing cover, select the artist and album, expand
+**Add or replace album cover**, select an image, and choose **Save album cover**.
+JPEG, PNG and WebP use the same preview, size limit, and Cloudinary setup as
+artist photos. Covers upload to the albums folder and appear on album cards and
+details; they are separate from individual song artwork. Failed album saves
+request cleanup of their unused uploads.
+
+### Audio returns 206 but the browser refuses playback
+
+The audio element uses anonymous CORS mode so a separately hosted API can keep
+Helmet’s `Cross-Origin-Resource-Policy: same-origin` protection. The backend’s
+`CORS_ALLOWED_ORIGINS` must include the frontend’s exact origin (for example,
+`http://localhost:5173`). `localhost` and `127.0.0.1` are different origins. Restart
+the backend after changing that setting. Playback still uses song-scoped tickets;
+no cookies or access JWTs are sent by the audio element. A 206 alone does not
+confirm that the browser accepted the response or decoded the media.
+
+### Persistent playback
+
+**Load audio** on a song opens the shared player. Press Play in that player; it
+stays mounted while navigating between songs, artists, albums, playlists and other
+pages. Loading another song replaces the current one. The mini-player offers
+play/pause, seeking, position, refresh and close controls, plus native audio
+controls for browser compatibility. Refreshing playback access preserves the
+current position and resumes if it was playing. An expired ticket is renewed on
+resume/seek; an already authorized active stream is not restarted just because
+its ticket expires. Closing the player or signing out stops playback, removes
+the audio source and clears Media Session metadata. Requests finishing after
+close/logout cannot restore a stopped player.
+
+Supported browsers expose the title, artist, artwork and play/pause/seek/stop
+controls through Media Session (including lock-screen controls where available).
+The app does not pause just because its page becomes hidden. Background playback
+still depends on the browser, operating system, battery settings and account
+session remaining valid. A PWA does not guarantee uninterrupted playback while
+minimized; test on the target phone. Reloading or closing the app stops playback
+and clears the in-memory player; login is restored from the session cookie when online. No audio, playback ticket or player session is
+persisted for offline use.
+
+### Persistent session deployment
+
+Apply backend migration `010-refresh-sessions` with `npm run db:migrate` before
+starting the updated API. Restart both frontend and backend. Sign in once using
+the updated frontend to create a persistent session; older access-only logins
+cannot be restored. Login lasts up to 14 days, subject to logout, suspension or
+revocation. Reload still stops the current audio; player state is not persisted.
+
+Use the same hostname consistently in development (`localhost` versus `127.0.0.1`).
+The API’s `CORS_ALLOWED_ORIGINS` must contain the exact frontend origin. Production
+requires HTTPS: the cookie is Secure there. Prefer same-origin hosting with an
+API proxy or same-site frontend/API domains. If the API is genuinely cross-site,
+set backend `AUTH_COOKIE_SAME_SITE=none` with `NODE_ENV=production`; browser
+third-party-cookie restrictions can still block it. Development defaults to Lax.
+
+Browser checks cover reload/new-tab restoration, credentialed cookies, renewal
+after an API 401, logout across tabs, and prevention of restoration after logout.

@@ -121,6 +121,86 @@ test('media tracking, real multipart/auth/database, provider failures, and recon
         assert.equal((await deletion).status, 204); assert.equal((await attachment).status, 409);
       } finally { release(); destroyGate = undefined; }
     });
+    await t.test('members upload only their own picture; auth responses persist it and cleanup preserves active pictures', async () => {
+      const memberEmail = `profile-${randomUUID()}@example.org`;
+      const member = await User.create({ name: 'Profile Member', email: memberEmail, passwordHash: await hash(password), role: Role.MEMBER, status: UserStatus.ACTIVE });
+      const loginResponse = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: memberEmail, password }) });
+      const memberToken = (await loginResponse.json() as { accessToken: string }).accessToken;
+      const picture = (auth = memberToken, bytes = PNG, extra?: string) => {
+        const body = new FormData(); body.append('file', new Blob([Uint8Array.from(bytes)], { type: 'image/png' }), 'picture.png');
+        if (extra) body.append('userId', extra);
+        return fetch(`${base}/users/me/picture`, { method: 'POST', headers: auth ? { Authorization: `Bearer ${auth}` } : {}, body });
+      };
+      const me = () => fetch(`${base}/auth/me`, { headers: { Authorization: `Bearer ${memberToken}` } });
+      const clear = () => fetch(`${base}/users/me/picture`, { method: 'DELETE', headers: { Authorization: `Bearer ${memberToken}` } });
+      try {
+        assert.equal((await picture('')).status, 401);
+        assert.equal((await picture(memberToken, Buffer.from('not an image'))).status, 415);
+        assert.equal((await picture(memberToken, Buffer.alloc(1025))).status, 413);
+        assert.equal((await picture(memberToken, PNG, ownerId)).status, 400);
+        const firstResponse = await picture(); assert.equal(firstResponse.status, 200);
+        const first = await firstResponse.json() as { profileImageUrl: string };
+        assert.ok(first.profileImageUrl.includes('/onebodymusic/profiles/'));
+        const stored = await member.reload(); const firstId = stored.profileImageAssetId!;
+        assert.equal(stored.profileImageUrl, first.profileImageUrl);
+        assert.equal((await me().then((r) => r.json()) as { profileImageUrl: string }).profileImageUrl, first.profileImageUrl);
+        const again = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: memberEmail, password }) });
+        assert.equal((await again.json() as { user: { profileImageUrl: string } }).user.profileImageUrl, first.profileImageUrl);
+        assert.equal((await User.findByPk(ownerId))?.profileImageUrl, null);
+        assert.equal((await remove(firstId)).status, 409);
+        await assert.rejects(MediaAsset.update({ status: MediaStatus.CLEANUP_PENDING }, { where: { id: firstId } }));
+        const firstAsset = await MediaAsset.findByPk(firstId, { rejectOnEmpty: true });
+        assert.equal(firstAsset.status, MediaStatus.READY);
+        await assert.rejects(User.update({ profileImageAssetId: firstId, profileImageUrl: first.profileImageUrl }, { where: { id: ownerId } }));
+        await age(firstId); await media!.reconcile(900);
+        assert.equal((await MediaAsset.findByPk(firstId))?.status, MediaStatus.READY);
+        failUpload = true;
+        try { assert.equal((await picture()).status, 502); } finally { failUpload = false; }
+        assert.equal((await member.reload()).profileImageAssetId, firstId);
+        const compiledUsers = (compiled('../dist/database/models') as { User: typeof User }).User;
+        compiledUsers.addHook('beforeUpdate', 'fail-profile-attachment', (user) => {
+          if (user.getDataValue('profileImageAssetId')) throw new Error('Simulated profile persistence failure');
+        });
+        try { assert.equal((await picture()).status, 500); }
+        finally { compiledUsers.removeHook('beforeUpdate', 'fail-profile-attachment'); }
+        assert.equal((await member.reload()).profileImageAssetId, firstId);
+        const readyAfterFailure = await MediaAsset.findAll({ where: { uploadedById: member.id, status: MediaStatus.READY } });
+        assert.deepEqual(readyAfterFailure.map((asset) => asset.id), [firstId]);
+        const replaced = await picture(); assert.equal(replaced.status, 200);
+        assert.notEqual((await member.reload()).profileImageAssetId, firstId);
+        assert.equal((await MediaAsset.findByPk(firstId))?.status, MediaStatus.CLEANUP_PENDING);
+        // Concurrent replacements serialize on the user; only the final picture remains referenced.
+        const concurrent = await Promise.all([picture(), picture()]);
+        for (const response of concurrent) assert.equal(response.status, 200);
+        const activeId = (await member.reload()).profileImageAssetId!;
+        const staged = await MediaAsset.findAll({ where: { uploadedById: member.id, folder: 'onebodymusic/profiles', status: MediaStatus.READY } });
+        assert.deepEqual(staged.map((asset) => asset.id), [activeId]);
+        assert.equal((await clear()).status, 200);
+        assert.equal((await member.reload()).profileImageUrl, null);
+        assert.equal((await MediaAsset.findByPk(activeId))?.status, MediaStatus.CLEANUP_PENDING);
+        assert.equal((await clear()).status, 200);
+        await member.update({ status: UserStatus.SUSPENDED });
+        assert.equal((await picture()).status, 401); assert.equal((await clear()).status, 401);
+      } finally {
+        await member.update({ profileImageUrl: null, profileImageAssetId: null });
+        const assets = await MediaAsset.findAll({ where: { uploadedById: member.id } });
+        for (const asset of assets) {
+          remote.delete(asset.publicId);
+          if (asset.status !== MediaStatus.DELETED) {
+            if (asset.status !== MediaStatus.CLEANUP_PENDING) await asset.update({ status: MediaStatus.CLEANUP_PENDING });
+            await asset.update({ status: MediaStatus.DELETED });
+          }
+        }
+        await MediaAsset.destroy({ where: { uploadedById: member.id } }); await member.destroy();
+      }
+    });
+    await t.test('administrators can upload and remove their own picture without changing their name', async () => {
+      const body = new FormData(); body.append('file', new Blob([Uint8Array.from(PNG)], { type: 'image/png' }), 'admin.png');
+      const response = await fetch(`${base}/users/me/picture`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
+      assert.equal(response.status, 200); const result = await response.json() as { name: string; profileImageUrl: string };
+      assert.equal(result.name, 'Media Admin'); assert.ok(result.profileImageUrl);
+      assert.equal((await fetch(`${base}/users/me/picture`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })).status, 200);
+    });
   } finally {
     failPersistence = false; failDeletionPersistence = false; failDestroy = false; failUpload = false;
     compiledAssets?.removeHook('beforeUpdate', 'test-media-finalization');
@@ -128,6 +208,7 @@ test('media tracking, real multipart/auth/database, provider failures, and recon
     try {
       await Artist.destroy({ where: { id: artistIds } });
       if (ownerId) {
+        await User.update({ profileImageUrl: null, profileImageAssetId: null }, { where: { id: ownerId } });
         const rows = await MediaAsset.findAll({ where: { uploadedById: ownerId } });
         for (const asset of rows) { remote.delete(asset.publicId); if (asset.status !== MediaStatus.DELETED) { if (asset.status !== MediaStatus.CLEANUP_PENDING) await asset.update({ status: MediaStatus.CLEANUP_PENDING }); await asset.update({ status: MediaStatus.DELETED }); } }
         await MediaAsset.destroy({ where: { uploadedById: ownerId } }); await User.destroy({ where: { id: ownerId } });

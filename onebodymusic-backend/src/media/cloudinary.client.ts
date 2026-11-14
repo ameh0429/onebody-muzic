@@ -16,7 +16,7 @@ export class CloudinaryClient {
   }
   private options(asset: MediaAsset): UploadApiOptions {
     if (!this.configured()) throw new ServiceUnavailableException('Cloudinary media is not configured');
-    if (!['onebodymusic/audio', 'onebodymusic/artists', 'onebodymusic/albums', 'onebodymusic/songs'].includes(asset.folder) || asset.publicId !== `${asset.folder}/${asset.id}` || (asset.kind === MediaKind.AUDIO ? asset.resourceType !== 'video' || asset.deliveryType !== 'authenticated' : asset.resourceType !== 'image' || asset.deliveryType !== 'upload')) throw new ServiceUnavailableException('Invalid media storage record');
+    if (!['onebodymusic/audio', 'onebodymusic/artists', 'onebodymusic/albums', 'onebodymusic/songs', 'onebodymusic/profiles'].includes(asset.folder) || asset.publicId !== `${asset.folder}/${asset.id}` || (asset.kind === MediaKind.AUDIO ? asset.resourceType !== 'video' || asset.deliveryType !== 'authenticated' : asset.resourceType !== 'image' || asset.deliveryType !== 'upload')) throw new ServiceUnavailableException('Invalid media storage record');
     return {
       cloud_name: this.config.get('CLOUDINARY_CLOUD_NAME', { infer: true }),
       api_key: this.config.get('CLOUDINARY_API_KEY', { infer: true }),
@@ -39,8 +39,13 @@ export class CloudinaryClient {
         const video: unknown = result.video;
         const audio: unknown = result.audio;
         const validAudio = typeof audio === 'object' && audio !== null && 'codec' in audio && typeof audio.codec === 'string';
+        // Cloudinary reports embedded JPEG/PNG audio cover art in its video field.
+        // FileInspector already validates the MP3 frames / audio-only M4A container.
+        const embeddedArtwork = typeof video === 'object' && video !== null && 'codec' in video
+          && typeof video.codec === 'string' && ['mjpeg', 'png'].includes(video.codec);
+        const unexpectedVideo = video && typeof video === 'object' && Object.keys(video).length > 0 && !embeddedArtwork;
         const validImage = Number.isInteger(result.width) && result.width > 0 && Number.isInteger(result.height) && result.height > 0;
-        if (result.public_id !== asset.publicId || result.resource_type !== asset.resourceType || result.type !== asset.deliveryType || result.format !== asset.format || result.bytes !== buffer.length || (asset.kind === MediaKind.AUDIO && (!validAudio || (video && typeof video === 'object' && Object.keys(video).length > 0))) || (asset.kind === MediaKind.IMAGE && !validImage)) { reject(new CloudinaryOperationError('INVALID_RESPONSE')); return; }
+        if (result.public_id !== asset.publicId || result.resource_type !== asset.resourceType || result.type !== asset.deliveryType || result.format !== asset.format || result.bytes !== buffer.length || (asset.kind === MediaKind.AUDIO && (!validAudio || unexpectedVideo)) || (asset.kind === MediaKind.IMAGE && !validImage)) { reject(new CloudinaryOperationError('INVALID_RESPONSE')); return; }
         resolve({ bytes: result.bytes, format: result.format, width: asset.kind === MediaKind.IMAGE ? result.width : null, height: asset.kind === MediaKind.IMAGE ? result.height : null, duration: asset.kind === MediaKind.AUDIO && typeof duration === 'number' && Number.isFinite(duration) ? duration : null });
       });
       stream.on('error', (error: unknown) => reject(classifyCloudinaryError(error)));
@@ -60,11 +65,12 @@ export class CloudinaryClient {
     }));
     if (typeof response !== 'object' || response === null || !('status' in response) || response.status !== 'ok') throw new CloudinaryOperationError('INVALID_RESPONSE');
   }
+  // Standard signatures were verified against authenticated audio delivery; long signatures returned 401.
   // Non-expiring provider signatures stay inside the server; browser tickets enforce expiry at the gateway.
   internalAudioUrl(asset: MediaAsset): string {
     const options = this.options(asset);
     if (asset.kind !== MediaKind.AUDIO) throw new ServiceUnavailableException('Audio media is required');
-    return cloudinary.url(asset.publicId, { cloud_name: options.cloud_name, api_secret: options.api_secret, resource_type: 'video', type: 'authenticated', format: asset.format, secure: true, sign_url: true, long_url_signature: true, auth_token: false });
+    return cloudinary.url(asset.publicId, { cloud_name: options.cloud_name, api_secret: options.api_secret, resource_type: 'video', type: 'authenticated', format: asset.format, secure: true, sign_url: true, long_url_signature: false, signature_algorithm: 'sha1', auth_token: false });
   }
   imageUrl(asset: MediaAsset): string | null {
     if (asset.kind !== MediaKind.IMAGE) return null;

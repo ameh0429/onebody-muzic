@@ -259,7 +259,7 @@ For role-restricted endpoints in future feature modules, import `AuthModule`, th
 
 `@Roles(Role.ADMIN, Role.MEMBER)` allows either role. Method roles override controller roles. `RolesGuard` denies authenticated users with a nonmatching current role with `403`. Use `@CurrentUser() user: UserResponseDto` to receive the sanitized, database-validated user. `@Roles()` is metadata; it requires the guards. No administrative or business test routes are shipped in the application.
 
-Swagger provides request/response schemas, examples, and failure codes under **Authentication**. Log in with an ACTIVE account, copy `accessToken`, click **Authorize**, paste it without a prefix, and execute **GET /api/v1/auth/me**. Swagger does not persist authorization across page reloads. There are no refresh-token, logout, activation, or password-reset endpoints in this task; access tokens expire after their configured short lifetime.
+Swagger provides request/response schemas, examples, and failure codes under **Authentication**. Log in with an ACTIVE account, copy `accessToken`, click **Authorize**, paste it without a prefix, and execute **GET /api/v1/auth/me**. Swagger does not persist authorization across page reloads. The browser session endpoints described below add persistent renewal and logout. Activation and password-reset endpoints are not provided; access tokens retain their configured short lifetime.
 
 Authentication HTTP/guard tests run with `npm test`. They exercise real Argon2 and JWT/Passport behavior with a repository test double. For real persistence checks, migrate a dedicated database, set `TEST_DATABASE_URL` securely, and run:
 
@@ -268,6 +268,29 @@ npm run test:auth:db
 ```
 
 This command builds and starts a temporary compiled API against the test database, verifies persisted hashing, normalized email races, login, current profile, suspension and deletion revocation, then removes only uniquely named fixtures and stops its server. Never use a production database. Existing `npm run test:db` checks remain available. No schema migration is needed for authentication because the User fields already exist.
+
+## Profile pictures
+
+After updating the backend, run `npm run db:migrate` (or `npm run db:migrate:prod`
+for compiled deployments) before restarting it. Migration `009-user-profile-picture`
+adds nullable user picture fields, a tracked media reference, and the fixed
+`onebodymusic/profiles` image namespace. Existing accounts keep their initial avatar.
+
+Active members and administrators can `POST /api/v1/users/me/picture` with a
+multipart `file` field to upload/replace their own picture, and
+`DELETE /api/v1/users/me/picture` to remove it. Both return the sanitized user,
+including nullable `profileImageUrl`; login and `/auth/me` return the same field.
+No target user ID, provider URL, storage key, or destination is accepted from the client.
+JPEG, PNG and WebP use the existing image MIME/signature/extension validation,
+`MEDIA_IMAGE_MAX_BYTES` limit (5 MiB by default), upload capacity and deadline.
+Cloudinary configuration and `MEDIA_ENABLED=true` are required for uploads.
+Removing an existing picture works even while uploads are disabled.
+
+Pictures use public Cloudinary image delivery: they are not private authenticated
+media. Old pictures are queued for the existing cleanup worker after replacement
+or removal; active pictures are excluded from staged-upload expiry. Failed uploads
+preserve the previous picture. Database guards protect ownership/readiness and
+prevent cleanup of a referenced profile image. Keep the media worker running.
 
 ## User management
 
@@ -901,3 +924,73 @@ The frontend's `VITE_MEDIA_UPLOAD_TIMEOUT_SECONDS` defaults to 120 seconds. If y
 increase the backend deadline, set the frontend deadline at least 30 seconds higher
 and adjust any reverse-proxy timeout. Restart NestJS after `.env` changes and
 restart/rebuild Vite after `VITE_*` changes. This fix needs no database migration.
+
+### Credentials pass but playback returns 502
+
+The Admin API ping checks a different path from authenticated CDN delivery. For a
+specific song, run this read-only check from the backend directory:
+
+```sh
+npm run media:check -- --song YOUR_SONG_UUID
+```
+
+It looks up the tracked READY audio and checks the same signed original URL used
+by the gateway with HEAD and a one-byte GET range. No account, song, or media
+records are changed. Each request has a 15-second deadline. Signed URLs, tickets,
+credentials and raw provider errors are not printed. The backend also logs these
+safe delivery diagnostics during ordinary playback:
+
+- `PROVIDER_HTTP` with `providerStatus=401/403`: the CDN rejected delivery; check
+  the Cloudinary product environment, authenticated resource and signing/account permissions.
+- `PROVIDER_HTTP` with `providerStatus=404`: verify the tracked audio still exists
+  under the stored namespace and authenticated video delivery type.
+- `RANGE_IGNORED`: the upstream returned a full response to a range request.
+- `INVALID_RANGE_OR_LENGTH`: provider range/size metadata disagrees with tracked audio.
+- `TLS`, `CONNECTION`, `TIMEOUT`: check the backend machine’s trust configuration,
+  outbound access to `res.cloudinary.com`, DNS and HTTPS proxy. Keep TLS verification enabled.
+
+Do not change ticket expiry to repair provider delivery errors. A successful song
+check verifies access and range headers, but does not establish browser codec support.
+
+Authenticated audio delivery uses the standard SDK URL signature (`sign_url: true`,
+`long_url_signature: false`, SHA-1). Live diagnosis verified HEAD 200 and byte-range
+206 with this format where the previous long signature returned 401. Audio stays
+authenticated; provider URLs remain internal and browser playback still requires
+a short-lived application ticket. This change requires a backend restart/rebuild,
+not a database migration or audio re-upload.
+
+## Persistent browser sessions
+
+Run `npm run db:migrate` (or `npm run db:migrate:prod` after building) before
+starting this version. Migration `010-refresh-sessions` adds AuthSession and
+RefreshToken tables without modifying existing accounts or passwords. Existing
+users must sign in once in the updated frontend to obtain a session cookie.
+
+- `POST /api/v1/auth/session`: accepts the existing login DTO, returns the normal
+  access-token/profile response and sets an HttpOnly refresh cookie.
+- `POST /api/v1/auth/refresh`: rotates that cookie and returns a fresh access JWT
+  and the current active user. A consumed token revokes its family when replayed.
+- `POST /api/v1/auth/logout`: revokes the current family and clears the cookie;
+  repeated logout is harmless. Existing access JWTs remain valid until their short
+  expiry, subject to the existing per-request active-account checks.
+
+All three require `X-Session-Request: 1`; an Origin header, when supplied, must be
+in `CORS_ALLOWED_ORIGINS`. Refresh/logout bodies must be empty objects. Login and
+refresh use the shared authentication rate limiter. Responses are not cached.
+The original `/auth/login` remains available for access-only API/Swagger clients.
+
+Refresh tokens are cryptographically random (48 bytes), are never returned in
+JSON, and are stored only as SHA-256 hashes. Rotation is transactional; families
+expire after a fixed 14 days and cannot renew after suspension/deletion. Cookies
+are host-only with Path `/api/v1/auth`, HttpOnly, SameSite=Lax by default and
+Secure in production. `AUTH_COOKIE_SAME_SITE` accepts lax/strict/none; none is
+allowed only in production HTTPS mode. Prefer same-site/API-proxy deployment;
+third-party cookie blocking can prevent genuinely cross-site sessions. CORS uses
+explicit approved origins and allows credentials. No cookie credential is needed
+for native audio playback, which continues to use scoped playback tickets.
+
+Expired session families are pruned in bounded batches on browser login; expired
+records are harmless until removed. Dropping the refresh-session tables invalidates
+all persistent sessions. Integration checks run in `npm run test:integration` and
+cover cookie settings, CSRF, rotation/replay, logout, expiry, account suspension
+and production Secure/SameSite=None flags.

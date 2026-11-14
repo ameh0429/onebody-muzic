@@ -1,3 +1,4 @@
+import { SessionsModule } from './auth/sessions/sessions.module';
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
@@ -15,7 +16,7 @@ import { RehearsalsModule } from './rehearsals/rehearsals.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }), DatabaseModule, AuthModule, UsersModule, ArtistsModule, AlbumsModule, MediaModule, SongsModule, PlaylistsModule, RehearsalsModule, HealthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true, cache: true, validate: validateEnvironment }), DatabaseModule, AuthModule, SessionsModule, UsersModule, ArtistsModule, AlbumsModule, MediaModule, SongsModule, PlaylistsModule, RehearsalsModule, HealthModule],
   providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
 })
 export class AppModule {}

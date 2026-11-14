@@ -2,6 +2,9 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @IsIn(['lax', 'strict', 'none'])
+  AUTH_COOKIE_SAME_SITE: 'lax' | 'strict' | 'none' = 'lax';
+
   @Type(() => Number) @IsInt() @Min(5) @Max(300)
   MEDIA_UPLOAD_TIMEOUT_SECONDS: number = 90;
 
@@ -120,6 +123,7 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
   });
   const missingMedia = validated.MEDIA_ENABLED === 'true'
     ? ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'].filter((key) => typeof config[key] !== 'string' || !(config[key] as string).trim()) : [];
+  if (validated.AUTH_COOKIE_SAME_SITE === 'none' && validated.NODE_ENV !== 'production') throw new Error('SameSite=None session cookies require production HTTPS.');
   if (errors.length > 0 || invalidOrigins || missingMedia.length > 0) {
     const fields = [...new Set([...errors.map((error) => error.property), ...missingMedia, ...(invalidOrigins ? ['CORS_ALLOWED_ORIGINS'] : [])])];
     throw new Error(`Invalid environment configuration: ${fields.join(', ')}`);

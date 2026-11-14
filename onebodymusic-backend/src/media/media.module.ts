@@ -1,3 +1,5 @@
+import { ProfilePictureController } from './profile-picture.controller';
+import { ProfilePictureService } from './profile-picture.service';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
@@ -10,5 +12,5 @@ import { FileInspector } from './file-inspector';
 import { MediaCleanupWorker } from './media-cleanup.worker';
 import { UploadCapacityInterceptor } from './interceptors/upload-capacity.interceptor';
 
-@Module({ imports: [AuthModule, DatabaseModule], controllers: [MediaController], providers: [MediaService, MediaRepository, CloudinaryClient, CloudinaryAudioGateway, FileInspector, MediaCleanupWorker, UploadCapacityInterceptor], exports: [MediaService, CloudinaryClient, CloudinaryAudioGateway] })
+@Module({ imports: [AuthModule, DatabaseModule], controllers: [MediaController, ProfilePictureController], providers: [ProfilePictureService, MediaService, MediaRepository, CloudinaryClient, CloudinaryAudioGateway, FileInspector, MediaCleanupWorker, UploadCapacityInterceptor], exports: [MediaService, CloudinaryClient, CloudinaryAudioGateway] })
 export class MediaModule {}

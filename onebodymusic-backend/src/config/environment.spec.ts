@@ -3,6 +3,13 @@ import { validateEnvironment as validate } from './environment';
 const validateEnvironment = (config: Record<string, unknown>) => validate({ DATABASE_URL: 'postgresql://localhost/onebodymusic', JWT_SECRET: 'test-only-secret-at-least-32-characters', ...config });
 
 describe('startup configuration validation', () => {
+  it('defaults session cookies to Lax and requires production HTTPS for SameSite=None', () => {
+    const base = { CORS_ALLOWED_ORIGINS: 'http://localhost:5173' };
+    expect(validateEnvironment(base).AUTH_COOKIE_SAME_SITE).toBe('lax');
+    expect(() => validateEnvironment({ ...base, AUTH_COOKIE_SAME_SITE: 'unknown' })).toThrow('AUTH_COOKIE_SAME_SITE');
+    expect(() => validateEnvironment({ ...base, AUTH_COOKIE_SAME_SITE: 'none' })).toThrow('HTTPS');
+    expect(validateEnvironment({ ...base, NODE_ENV: 'production', AUTH_COOKIE_SAME_SITE: 'none' }).AUTH_COOKIE_SAME_SITE).toBe('none');
+  });
   it('parses explicit origins and applies documented defaults', () => {
     expect(validateEnvironment({ CORS_ALLOWED_ORIGINS: 'http://localhost:5173, https://music.example.org' }))
       .toMatchObject({ NODE_ENV: 'development', PORT: 3000, CORS_ALLOWED_ORIGINS: ['http://localhost:5173', 'https://music.example.org'] });

@@ -81,9 +81,9 @@ export class AlbumsService {
   }
 
   private async detail(id: string, transaction?: Transaction): Promise<AlbumDetailResponseDto> {
-    const album = await this.albums.findByPk(id, { attributes: SONG_COUNT, include: [ARTIST, { model: Song, as: 'songs', separate: true, attributes: ['id', 'title', 'artistId', 'category', 'durationSeconds'], order: [['title', 'ASC'], ['id', 'ASC']] }], transaction });
+    const album = await this.albums.findByPk(id, { attributes: SONG_COUNT, include: [ARTIST, { model: Song, as: 'songs', separate: true, attributes: ['id', 'title', 'artistId', 'category', 'durationSeconds', 'coverImageUrl'], order: [['title', 'ASC'], ['id', 'ASC']] }], transaction });
     if (!album) throw new NotFoundException('Album not found');
-    return { ...this.response(album), songs: album.songs.map((song) => ({ id: song.id, title: song.title, artistId: song.artistId, category: song.category, durationSeconds: song.durationSeconds })) };
+    return { ...this.response(album), songs: album.songs.map((song) => ({ id: song.id, title: song.title, artistId: song.artistId, category: song.category, durationSeconds: song.durationSeconds, coverImageUrl: song.coverImageUrl })) };
   }
 
   private response(album: Album): AlbumResponseDto {

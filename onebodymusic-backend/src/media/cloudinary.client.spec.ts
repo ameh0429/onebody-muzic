@@ -32,6 +32,42 @@ describe('Cloudinary authenticated-delivery boundary', () => {
     });
     await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), asset)).rejects.toThrow('INVALID_RESPONSE');
   });
+  it.each(['mjpeg', 'png'])('accepts embedded %s cover artwork without storing it as song artwork', async (codec) => {
+    const asset = audioAsset();
+    streamUpload.mockImplementation((_options, callback) => {
+      const stream = new PassThrough();
+      stream.on('finish', () => callback?.(undefined, {
+        public_id: asset.publicId, resource_type: 'video', type: 'authenticated', format: 'mp3', bytes: 3,
+        audio: { codec: 'mp3' }, video: { codec }, width: 600, height: 600, duration: 120,
+      } as unknown as UploadApiResponse));
+      return stream;
+    });
+    await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), asset)).resolves.toEqual({
+      bytes: 3, format: 'mp3', duration: 120, width: null, height: null,
+    });
+  });
+  it.each([
+    { video: { codec: 'h264' } },
+    { video: { codec: 'vp9' } },
+    { video: { width: 600 } },
+    { video: { codec: 'mjpeg' }, audio: undefined },
+    { video: { codec: 'mjpeg' }, type: 'upload' },
+    { video: { codec: 'png' }, format: 'mp4' },
+    { video: { codec: 'png' }, bytes: 4 },
+    { video: { codec: 'png' }, public_id: 'unrelated' },
+    { video: { codec: 'png' }, resource_type: 'image' },
+  ])('rejects incompatible metadata even with cover art: %j', async (overrides) => {
+    const asset = audioAsset();
+    streamUpload.mockImplementation((_options, callback) => {
+      const stream = new PassThrough();
+      stream.on('finish', () => callback?.(undefined, {
+        public_id: asset.publicId, resource_type: 'video', type: 'authenticated', format: 'mp3', bytes: 3,
+        audio: { codec: 'mp3' }, ...overrides,
+      } as unknown as UploadApiResponse));
+      return stream;
+    });
+    await expect(new CloudinaryClient(config).upload(Buffer.from('abc'), asset)).rejects.toThrow('INVALID_RESPONSE');
+  });
   it('checks credentials with a bounded read-only ping and classifies rejection safely', async () => {
     jest.mocked(cloudinary.api.ping).mockResolvedValueOnce({ status: 'ok' }).mockRejectedValueOnce({ http_code: 401, message: 'private-key-must-not-leak' });
     const provider = new CloudinaryClient(config); await provider.checkConnection();
@@ -52,6 +88,14 @@ describe('Cloudinary authenticated-delivery boundary', () => {
     const asset = audioAsset(); jest.mocked(cloudinary.url).mockReturnValue('https://res.cloudinary.com/test/video/authenticated/internal.mp3');
     expect(new CloudinaryClient(config).internalAudioUrl(asset)).toContain('/video/authenticated/');
     expect(cloudinary.url).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({ type: 'authenticated', resource_type: 'video', secure: true, sign_url: true, auth_token: false }));
+  });
+  it('uses the verified standard signature by default while retaining authenticated delivery', () => {
+    const asset = audioAsset();
+    new CloudinaryClient(config).internalAudioUrl(asset);
+    expect(cloudinary.url).toHaveBeenCalledWith(asset.publicId, expect.objectContaining({
+      type: 'authenticated', resource_type: 'video', sign_url: true, long_url_signature: false,
+      signature_algorithm: 'sha1', auth_token: false,
+    }));
   });
   it('refuses storage keys outside the server-owned namespace', async () => {
     const asset = audioAsset(); asset.publicId = 'someone-elses-file';

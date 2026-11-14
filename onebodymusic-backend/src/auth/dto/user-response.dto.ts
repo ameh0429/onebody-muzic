@@ -11,6 +11,9 @@ export class UserResponseDto {
   @ApiProperty({ example: 'grace@example.org', format: 'email' })
   email!: string;
 
+  @ApiProperty({ type: String, nullable: true, description: 'Public profile picture URL, or null when unset.' })
+  profileImageUrl?: string | null;
+
   @ApiProperty({ enum: Role, example: Role.MEMBER })
   role!: Role;
 
