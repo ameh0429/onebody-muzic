@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, ValidateIf, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSongDto {
@@ -19,6 +19,13 @@ export class CreateSongDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   artistId!: string;
+  @ApiPropertyOptional({ type: [String], format: 'uuid', maxItems: 20, description: 'Featured artist IDs in credit order. Omit to preserve existing credits on update; [] clears them.' })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique((id: unknown) => typeof id === 'string' ? id.toLowerCase() : id)
+  @IsUUID(undefined, { each: true })
+  featuredArtistIds?: string[];
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @IsUUID()

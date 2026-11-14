@@ -59,6 +59,15 @@ async function main() {
   checks.push('an API 401 renews the HttpOnly session and retries the request without signing out');
 
 
+  const guestA=await Artist.create({name:`Featured A ${suffix}`});const guestB=await Artist.create({name:`Featured B ${suffix}`});extraArtistIds.push(guestA.id,guestB.id);
+  await go(`/songs/${songs[0].id}`);const creditsEditor=page.locator('details').filter({hasText:'Edit featured artists'});await creditsEditor.locator('summary').click();
+  for(const guest of [guestA,guestB]){await creditsEditor.getByLabel('Search add featured artist').fill(guest.name);await creditsEditor.getByRole('button',{name:'Find',exact:true}).click();await creditsEditor.getByRole('combobox',{name:'Add featured artist',exact:true}).selectOption(guest.id);}
+  await creditsEditor.getByRole('button',{name:`Move ${guestB.name} up`,exact:true}).click();await creditsEditor.getByRole('button',{name:'Save featured artists',exact:true}).click();await creditsEditor.getByRole('status').filter({hasText:'Featured artists saved.'}).waitFor();
+  await page.locator('.detail-hero').getByRole('link',{name:guestB.name,exact:true}).waitFor();assert.ok((await page.locator('.detail-hero').innerText()).indexOf(guestB.name)<(await page.locator('.detail-hero').innerText()).indexOf(guestA.name));
+  await page.locator('.detail-hero').getByRole('link',{name:guestB.name,exact:true}).click();await page.getByRole('heading',{name:'Featured on',exact:true}).waitFor();await page.locator('section').filter({has:page.getByRole('heading',{name:'Featured on',exact:true})}).getByRole('link').filter({hasText:'Amazing Grace'}).waitFor();
+  await go('/admin/upload');const uploadCredits=page.getByRole('combobox',{name:'Add featured artist',exact:true});await uploadCredits.selectOption(guestA.id);await page.getByRole('list',{name:'Featured artists',exact:true}).getByText(guestA.name,{exact:false}).waitFor();
+  checks.push('administrator edits/reorders featured artists; linked credits and Featured on resolve; upload form accepts featured artists');
+
   for (const [path,heading] of [['/songs','Music library'],[`/songs/${songs[0].id}`,'Amazing Grace'],['/artists','Voices of worship'],[`/artists/${artist.id}`,artist.name],['/albums','Albums'],[`/albums/${album.id}`,album.title],['/playlists','Your playlists'],['/rehearsals','Rehearsals'],[`/rehearsals/${event.id}`,event.title],['/profile','Your profile'],['/admin','Admin workspace'],['/admin/upload','Add to the library']]) { await go(path); await page.getByRole('heading',{name:heading,exact:true}).first().waitFor(); }
   checks.push('all library, details, profile, rehearsal and admin screens render against real API');
   await go(`/albums/${album.id}`);
@@ -89,7 +98,7 @@ async function main() {
   assert.equal(await persistentAudio.evaluate(el=>el===document.querySelector('audio')),true);
   assert.equal(await page.locator('audio').evaluate(el=>el.paused),false);
   assert.ok(await page.locator('audio').evaluate(el=>el.currentTime)>=beforeNavigation);
-  if(await page.evaluate(()=>!!navigator.mediaSession))assert.equal(await page.evaluate(()=>navigator.mediaSession.metadata.title),'Amazing Grace');
+  if(await page.evaluate(()=>!!navigator.mediaSession)){assert.equal(await page.evaluate(()=>navigator.mediaSession.metadata.title),'Amazing Grace');assert.equal(await page.evaluate(()=>navigator.mediaSession.metadata.artist),`${artist.name} feat. ${guestB.name} & ${guestA.name}`);}
   await page.screenshot({path:'/tmp/onebodymusic-player-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

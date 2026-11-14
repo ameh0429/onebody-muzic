@@ -223,6 +223,9 @@ export class Song extends Model<InferAttributes<Song>, InferCreationAttributes<S
   @BelongsTo(() => User, { foreignKey: 'uploadedById', onDelete: 'RESTRICT', onUpdate: 'CASCADE' })
   declare uploadedBy: NonAttribute<User>;
 
+  @HasMany(() => SongFeaturedArtist, 'songId')
+  declare featuredCredits: NonAttribute<SongFeaturedArtist[]>;
+
   @HasMany(() => PlaylistSong, 'songId')
   declare playlistSongs: NonAttribute<PlaylistSong[]>;
 }
@@ -408,4 +411,28 @@ export class MediaAsset extends Model<InferAttributes<MediaAsset>, InferCreation
   declare uploadedBy: NonAttribute<User>;
 }
 
-export const DATABASE_MODELS = [User, Artist, Album, Song, Playlist, PlaylistSong, Rehearsal, MediaAsset];
+@Table({ tableName: 'SongFeaturedArtist', timestamps: false })
+export class SongFeaturedArtist extends Model<InferAttributes<SongFeaturedArtist>, InferCreationAttributes<SongFeaturedArtist>> {
+  @PrimaryKey
+  @ForeignKey(() => Song)
+  @Column(DataType.UUID)
+  declare songId: string;
+  @PrimaryKey
+  @ForeignKey(() => Artist)
+  @Column(DataType.UUID)
+  declare artistId: string;
+  @AllowNull(false)
+  @Column(DataType.INTEGER)
+  declare position: number;
+  @BelongsTo(() => Artist, { foreignKey: 'artistId', onDelete: 'RESTRICT' })
+  declare artist: NonAttribute<Artist>;
+  @BelongsTo(() => Song, { foreignKey: 'songId', onDelete: 'CASCADE' })
+  declare song: NonAttribute<Song>;
+}
+
+export const FEATURED_CREDITS_INCLUDE = { model: SongFeaturedArtist, as: 'featuredCredits', separate: true, order: [['position', 'ASC']] as [string, string][], include: [{ model: Artist, as: 'artist', attributes: ['id', 'name'] }] };
+export function featuredArtists(song: Song): { id: string; name: string }[] {
+  return (song.featuredCredits ?? []).map(credit => ({ id: credit.artist.id, name: credit.artist.name }));
+}
+
+export const DATABASE_MODELS = [User, Artist, Album, Song, Playlist, PlaylistSong, Rehearsal, MediaAsset, SongFeaturedArtist];

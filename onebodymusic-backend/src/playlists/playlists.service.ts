@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { InjectConnection, InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { ForeignKeyConstraintError, literal, Op, Transaction, UniqueConstraintError, WhereOptions } from 'sequelize';
-import { Artist, Playlist, PlaylistPublicationStatus, PlaylistSong, PlaylistType, Role, Song, User, UserStatus } from '../database/models';
+import { Artist, Playlist, PlaylistPublicationStatus, PlaylistSong, PlaylistType, Role, Song, User, UserStatus, FEATURED_CREDITS_INCLUDE, featuredArtists } from '../database/models';
 import { UserResponseDto } from '../auth/dto/user-response.dto';
 import { CreatePlaylistDto } from './dto/create-playlist.dto';
 import { UpdatePlaylistDto } from './dto/update-playlist.dto';
@@ -123,8 +123,8 @@ export class PlaylistsService {
   private async detail(id: string, actor: Actor, transaction?: Transaction): Promise<PlaylistDetailResponseDto> {
     const playlist = await this.playlists.findByPk(id, { transaction, attributes: COUNTS }); if (!playlist) throw new NotFoundException('Playlist not found'); this.authorize(playlist, actor, false);
     // Check visibility before reading song contents; no lyrics or provider audio identifiers are selected.
-    const entries = await this.entries.findAll({ where: { playlistId: id }, order: [['position', 'ASC'], ['id', 'ASC']], transaction, include: [{ model: Song, as: 'song', required: true, attributes: ['id', 'title', 'artistId', 'durationSeconds', 'category'], include: [{ model: Artist, as: 'artist', required: true, attributes: ['id', 'name'] }] }] });
-    return { ...this.response(playlist), songs: entries.map((entry) => ({ songId: entry.songId, position: entry.position, song: { id: entry.song.id, title: entry.song.title, artistId: entry.song.artistId, artistName: entry.song.artist.name, durationSeconds: entry.song.durationSeconds, category: entry.song.category } })) };
+    const entries = await this.entries.findAll({ where: { playlistId: id }, order: [['position', 'ASC'], ['id', 'ASC']], transaction, include: [{ model: Song, as: 'song', required: true, attributes: ['id', 'title', 'artistId', 'durationSeconds', 'category'], include: [{ model: Artist, as: 'artist', required: true, attributes: ['id', 'name'] }, FEATURED_CREDITS_INCLUDE] }] });
+    return { ...this.response(playlist), songs: entries.map((entry) => ({ songId: entry.songId, position: entry.position, song: { id: entry.song.id, title: entry.song.title, artistId: entry.song.artistId, artistName: entry.song.artist.name, featuredArtists: featuredArtists(entry.song), durationSeconds: entry.song.durationSeconds, category: entry.song.category } })) };
   }
   private async write<T>(actor: Actor, work: (fresh: Actor, transaction: Transaction) => Promise<T>): Promise<T> {
     this.active(actor);

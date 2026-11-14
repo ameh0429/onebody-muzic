@@ -1,3 +1,4 @@
+import { SongArtistDto } from '../../songs/dto/song-response.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { PlaylistPublicationStatus, PlaylistType } from '../../database/models';
 
@@ -30,6 +31,8 @@ export class PlaylistSongInfoDto {
   artistId!: string;
   @ApiProperty({ example: 'Church Choir' })
   artistName!: string;
+  @ApiProperty({ type: [SongArtistDto] })
+  featuredArtists!: SongArtistDto[];
   @ApiProperty({ type: Number, nullable: true })
   durationSeconds!: number | null;
   @ApiProperty({ type: String, nullable: true })

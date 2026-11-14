@@ -309,3 +309,19 @@ third-party-cookie restrictions can still block it. Development defaults to Lax.
 
 Browser checks cover reload/new-tab restoration, credentialed cookies, renewal
 after an API 401, logout across tabs, and prevention of restoration after logout.
+
+### Featured artists
+
+In **Admin workspace → Add to the library**, choose the main **Artist**, then
+use **Add featured artist** to select optional guest artists. Selected artists
+appear in an ordered list; move them up/down or remove them before publishing.
+The main artist cannot also be featured. Create missing artists using the existing
+**Add a new artist** form, then select them as needed.
+
+For an existing song, open its detail page and expand **Edit featured artists**
+(administrators only). Save an empty selection to remove all guest credits.
+Song credits display as “Main artist feat. Guest & Guest”; artist names on song
+details link to profiles. Profiles separate **Songs by this artist** and
+**Featured on**. Credits also appear in the library, dashboard, album tracks,
+playlists, rehearsal setlists, player, and supported lock-screen metadata.
+Apply backend migration `011-song-featured-artists` before deploying this frontend.

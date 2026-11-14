@@ -994,3 +994,23 @@ records are harmless until removed. Dropping the refresh-session tables invalida
 all persistent sessions. Integration checks run in `npm run test:integration` and
 cover cookie settings, CSRF, rotation/replay, logout, expiry, account suspension
 and production Secure/SameSite=None flags.
+
+## Featured artist credits
+
+Apply migration `011-song-featured-artists` with `npm run db:migrate` (or
+`npm run db:migrate:prod` after building) before starting this version.
+Existing songs retain their main `artistId` and have no featured credits.
+
+Song POST/PATCH accepts optional `featuredArtistIds`, an ordered array of up to
+20 existing artist UUIDs. Duplicate IDs (including case variants), missing
+artists, and listing the main artist as a featured artist are rejected.
+Omitting the field on PATCH preserves credits; `[]` clears them; `null` is
+invalid. A main-artist change is checked against retained credits. Album ownership
+continues to follow the main artist. Credits and song changes commit atomically.
+
+Song list/detail, album-song, and playlist-song responses include
+`featuredArtists: [{ id, name }]` in credit order. `GET /api/v1/songs?artistId=...`
+continues to select main-artist songs; `featuredArtistId=...` selects guest credits
+with the same pagination and other filters. Artist deletion is restricted while
+credited, and song deletion cascades only its featured-credit links. Media
+ownership and playback authorization are unchanged.

@@ -25,6 +25,10 @@ export class ListSongsDto {
   @IsOptional()
   @IsUUID()
   albumId?: string;
+  @ApiPropertyOptional({ format: 'uuid', description: 'Songs featuring this artist.' })
+  @IsOptional()
+  @IsUUID()
+  featuredArtistId?: string;
   @ApiPropertyOptional({ example: 'grace' })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
