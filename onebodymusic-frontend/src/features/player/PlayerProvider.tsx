@@ -1,13 +1,14 @@
 import { creditText } from '../../components/SongCredits';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Pause, Play, RotateCw, X } from 'lucide-react';
+import { Pause, Play, RotateCw, SkipBack, SkipForward, X } from 'lucide-react';
 import { api, message, playbackUrl } from '../../lib/api';
 import type { Song } from '../../lib/types';
 
 interface Player {
   song: Song | null; busy: boolean; error: string;
   prepare: (song: Song, play?: boolean, position?: number) => Promise<void>;
+  playQueue: (songIds: string[]) => void;
   updateDetails: (song: Song) => void;
   stopIfSelected: (id: string) => void;
   stop: () => void; refresh: () => void;
@@ -21,9 +22,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const position = useRef(0); const pendingPosition = useRef(0); const retried = useRef(false);
   const [song, setSong] = useState<Song | null>(null); const [busy, setBusy] = useState(false);
   const [error, setError] = useState(''); const [playing, setPlaying] = useState(false); const [time, setTime] = useState(0);
+  const queue = useRef<{ ids: string[]; index: number }>({ ids: [], index: 0 });
+  const [queuePosition, setQueuePosition] = useState({ index: 0, total: 0 });
+  function clearQueue() { queue.current = { ids: [], index: 0 }; setQueuePosition({ index: 0, total: 0 }); }
+  function move(offset: number) {
+    const next = queue.current.index + offset;
+    if (next < 0 || next >= queue.current.ids.length) return;
+    queue.current.index = next; setQueuePosition({ index: next, total: queue.current.ids.length });
+    void loadTrack(queue.current.ids[next]!, true);
+  }
+  function playQueue(ids: string[]) {
+    if (!ids.length) return;
+    queue.current = { ids: [...ids], index: 0 }; setQueuePosition({ index: 0, total: ids.length });
+    void loadTrack(ids[0]!, true);
+  }
   const [length, setLength] = useState(0);
   function stop() {
-    generation.current++; request.current?.abort(); current.current = null; expires.current = 0;
+    clearQueue(); generation.current++; request.current?.abort(); current.current = null; expires.current = 0;
     const element = audio.current; if (element) { element.pause(); element.removeAttribute('src'); element.load(); }
     position.current = 0; pendingPosition.current = 0; retried.current = false;
     setSong(null); setBusy(false); setPlaying(false); setTime(0); setLength(0); setError('');
@@ -33,11 +48,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => { generation.current++; request.current?.abort(); if (element) { element.pause(); element.removeAttribute('src'); element.load(); } };
   }, []);
   async function prepare(next: Song, play = false, resume = 0) {
+    clearQueue(); await loadTrack(next, play, resume);
+  }
+  async function loadTrack(target: Song | string, play = false, resume = 0) {
     const version = ++generation.current; request.current?.abort(); const controller = new AbortController(); request.current = controller;
-    const changing = current.current?.id !== next.id;
-    current.current = next; setSong(next); setBusy(true); setError('');
-    if (changing) { const element = audio.current; if (element) { element.pause(); element.removeAttribute('src'); element.load(); } position.current = 0; expires.current = 0; setTime(0); retried.current = false; setLength(0); }
+    const changing = current.current?.id !== (typeof target === 'string' ? target : target.id);
+    setBusy(true); setError('');
+    if (changing) { current.current = null; setSong(null); setPlaying(false); const element = audio.current; if (element) { element.pause(); element.removeAttribute('src'); element.load(); } position.current = 0; expires.current = 0; setTime(0); retried.current = false; setLength(0); }
     try {
+      const next = typeof target === 'string' ? (await api.get<Song>(`/songs/${target}`, { signal: controller.signal })).data : target;
+      if (version !== generation.current) return;
+      current.current = next; setSong(next);
+      if (!next.hasAudioAsset) throw new Error('Audio is not available for this song. Choose another song to continue.');
       const { data } = await api.get<{ url: string; expiresAt?: string; expiresIn?: number }>(`/songs/${next.id}/stream?redirect=false`, { signal: controller.signal });
       if (version !== generation.current) return;
       const element = audio.current; if (!element) return;
@@ -55,12 +77,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   async function toggle() {
     const element = audio.current; const track = current.current; if (!element || !track) return;
     if (!element.paused) { element.pause(); return; }
-    if (Date.now() >= expires.current) { retried.current = false; await prepare(track, true, element.ended ? 0 : Number.isFinite(element.currentTime) ? element.currentTime : position.current); return; }
+    if (Date.now() >= expires.current) { retried.current = false; await loadTrack(track, true, element.ended ? 0 : Number.isFinite(element.currentTime) ? element.currentTime : position.current); return; }
     try { await element.play(); setError(''); } catch { setError('Press Play again, or refresh playback access.'); }
   }
   function seek(value: number) {
     const track = current.current; if (!track) return;
-    if (Date.now() >= expires.current) { retried.current = false; void prepare(track, playing, value); }
+    if (Date.now() >= expires.current) { retried.current = false; void loadTrack(track, playing, value); }
     else if (audio.current) { pendingPosition.current = audio.current.readyState === 0 ? value : 0; audio.current.currentTime = value; position.current = value; setTime(value); }
   }
   useEffect(() => {
@@ -68,6 +90,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     navigator.mediaSession.metadata = song && typeof MediaMetadata !== 'undefined' ? new MediaMetadata({ title: song.title, artist: creditText(song.artist.name, song.featuredArtists), album: song.album?.title || '', artwork: song.coverImageUrl ? [{ src: song.coverImageUrl }] : [] }) : null;
     const handlers: Partial<Record<MediaSessionAction, MediaSessionActionHandler>> = {
       play: () => { if (audio.current?.paused) void toggle(); }, pause: () => audio.current?.pause(), stop,
+      previoustrack: () => move(-1), nexttrack: () => move(1),
       seekto: (details) => { if (details.seekTime !== undefined) seek(details.seekTime); },
       seekbackward: (details) => seek(Math.max(0, position.current - (details.seekOffset || 10))),
       seekforward: (details) => seek(Math.min(length || position.current + 10, position.current + (details.seekOffset || 10))),
@@ -78,28 +101,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       for (const action of Object.keys(handlers)) { try { navigator.mediaSession.setActionHandler(action as MediaSessionAction, null); } catch { /* Unsupported action. */ } }
       navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none';
     };
-  }, [song, playing, length]);
+  }, [song, playing, length, queuePosition]);
   useEffect(() => {
     if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
     try { if (length > 0) navigator.mediaSession.setPositionState({ duration: length, playbackRate: 1, position: Math.min(time, length) }); else navigator.mediaSession.setPositionState(); } catch { /* Browser may not support position state. */ }
   }, [time, length]);
   useEffect(() => {
-    document.body.classList.toggle('has-player', !!song);
+    document.body.classList.toggle('has-player', !!song || queuePosition.total > 0);
     return () => document.body.classList.remove('has-player');
-  }, [song]);
-  return <Context.Provider value={{ song, busy, error, prepare, stop, stopIfSelected: id => { if (current.current?.id === id) stop(); }, updateDetails: next => { if (current.current?.id === next.id) { current.current = next; setSong(next); } }, refresh: () => { const track = current.current; if (track) { retried.current = false; void prepare(track, !audio.current?.paused, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); } } }}>{children}
-    <section className="mini-player" aria-label="Now playing" hidden={!song}>
-      {song && <><div className="player-title"><Link to={`/songs/${song.id}`}><strong>{song.title}</strong><span>{creditText(song.artist.name, song.featuredArtists)}</span></Link></div>
-        <button className="icon-btn" aria-label={playing ? 'Pause audio' : 'Play audio'} disabled={busy} onClick={() => void toggle()}>{playing ? <Pause size={20}/> : <Play size={20}/>}</button>
-        <button className="icon-btn" aria-label="Refresh playback access" disabled={busy} onClick={() => { retried.current = false; void prepare(song, playing, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); }}><RotateCw size={18}/></button>
+  }, [song, queuePosition.total]);
+  return <Context.Provider value={{ song, busy, error, prepare, playQueue, stop, stopIfSelected: id => { if (current.current?.id === id) stop(); }, updateDetails: next => { if (current.current?.id === next.id) { current.current = next; setSong(next); } }, refresh: () => { const track = current.current; if (track) { retried.current = false; void loadTrack(track, !audio.current?.paused, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); } } }}>{children}
+    <section className="mini-player" aria-label="Now playing" hidden={!song && !queuePosition.total}>
+      {(song || queuePosition.total > 0) && <><div className="player-title">{song ? <Link to={`/songs/${song.id}`}><strong>{song.title}</strong><span>{creditText(song.artist.name, song.featuredArtists)}</span></Link> : <strong>{busy ? 'Loading song…' : 'Song unavailable'}</strong>}</div>
+        {queuePosition.total > 0 && <><span className="subtle text-xs" aria-label="Queue position">{queuePosition.index + 1} / {queuePosition.total}</span><button className="icon-btn" aria-label="Previous song" disabled={busy || queuePosition.index === 0} onClick={() => move(-1)}><SkipBack size={20}/></button></>}
+        <button className="icon-btn" aria-label={playing ? 'Pause audio' : 'Play audio'} disabled={busy || !song} onClick={() => void toggle()}>{playing ? <Pause size={20}/> : <Play size={20}/>}</button>
+        {queuePosition.total > 0 && <button className="icon-btn" aria-label="Next song" disabled={busy || queuePosition.index >= queuePosition.total - 1} onClick={() => move(1)}><SkipForward size={20}/></button>}
+        <button className="icon-btn" aria-label="Refresh playback access" disabled={busy} onClick={() => { retried.current = false; const target = song || queue.current.ids[queue.current.index]; if (target) void loadTrack(target, !song || playing, audio.current && Number.isFinite(audio.current.currentTime) ? audio.current.currentTime : position.current); }}><RotateCw size={18}/></button>
         <button className="icon-btn" aria-label="Close player" onClick={stop}><X size={20}/></button></>}
       <audio ref={audio} crossOrigin="anonymous" controls preload="none" className="player-native" aria-label="Audio player"
         onLoadedMetadata={() => { const element = audio.current; if (!element) return; if (Number.isFinite(element.duration)) setLength(element.duration); if (pendingPosition.current > 0) { element.currentTime = Math.min(pendingPosition.current, Number.isFinite(element.duration) ? element.duration : pendingPosition.current); pendingPosition.current = 0; } }}
         onTimeUpdate={() => { const value = audio.current?.currentTime || 0; position.current = value; setTime(value); }}
-        onPlay={() => { const track = current.current; if (track && Date.now() >= expires.current && !retried.current) { retried.current = true; void prepare(track, true, position.current); } }}
-        onPlaying={() => { setPlaying(true); setError(''); retried.current = false; }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
-        onError={() => { const track = current.current; if (!track || !audio.current?.getAttribute('src')) return; if (!retried.current && navigator.onLine && Date.now() >= expires.current) { retried.current = true; void prepare(track, playing, position.current); } else setError('Audio could not be played. Refresh playback access and try again.'); }}/>
-      {song && busy && <p role="status">Preparing audio…</p>}{song && error && <p className="player-error" role="alert">{error}</p>}
+        onPlay={() => { const track = current.current; if (track && Date.now() >= expires.current && !retried.current) { retried.current = true; void loadTrack(track, true, position.current); } }}
+        onPlaying={() => { setPlaying(true); setError(''); retried.current = false; }} onPause={() => setPlaying(false)} onEnded={() => { if (audio.current?.ended) { setPlaying(false); move(1); } }}
+        onError={() => { const track = current.current; if (!track || !audio.current?.getAttribute('src')) return; if (!retried.current && navigator.onLine && Date.now() >= expires.current) { retried.current = true; void loadTrack(track, playing, position.current); } else setError('Audio could not be played. Refresh playback access and try again.'); }}/>
+      {busy && <p role="status">Preparing audio…</p>}{error && <p className="player-error" role="alert">{error}</p>}
     </section>
   </Context.Provider>;
 }
