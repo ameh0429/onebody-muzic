@@ -46,3 +46,24 @@
 .auth-form { background:var(--bg); }
 
 :root[data-theme=dark] .library-delete .btn.danger { color:#ffb4b4; border-color:#ffb4b480; }
+
+/* The welcome message sits directly on the navy/plum brand palette. */
+.auth-story {
+  background:radial-gradient(ellipse at 100% 100%,#dfa08255,transparent 60%),linear-gradient(135deg,#0d102b 0%,#302044 50%,#704882 100%);
+}
+@media(min-width:1024px) {
+  .auth-story { gap:24px; padding:40px clamp(32px,4.5vw,65px); }
+  .auth-story .auth-love {
+    margin:24px 0 0;
+    font-size:clamp(1.65rem,2.8vw,2.75rem);
+    font-weight:650;
+    font-style:italic;
+    line-height:1.5;
+    letter-spacing:-.025em;
+    text-align:center;
+    overflow-wrap:normal;
+  }
+  .auth-love span { display:block; }
+  .auth-love .auth-love-intro { margin-bottom:8px; color:#ffe5a6; }
+  .auth-story-art { margin:24px auto 0; }
+}
