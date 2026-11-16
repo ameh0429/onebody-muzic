@@ -222,15 +222,16 @@ README troubleshooting section for local Windows networking, credentials and TLS
 
 ### Profile pictures
 
-On Profile, choose a JPEG, PNG or WebP image, review the preview, and select
-**Upload picture** (or **Replace picture**). **Cancel selection** keeps the saved
-picture, and **Remove picture** restores your initial avatar. The saved picture
+On Profile, click your picture to open the device image picker. Selecting a valid
+JPEG, PNG or WebP uploads immediately, without a preview or save step. Closing the
+picker leaves your picture unchanged. **Remove picture** restores your initial
+avatar. The saved picture
 appears on Profile and in the header/sidebar, including after signing in again.
 Broken image links fall back to your initial. The default size limit is 5 MiB;
 `VITE_IMAGE_MAX_BYTES` should match the backend limit. Pictures use public image
 links. Uploads require the backend profile-picture migration and Cloudinary setup.
 
-The browser workflow also checks picture validation, preview/cancellation, upload,
+The browser workflow also checks picture validation, immediate upload, picker cancellation, upload-error retry,
 shared avatar updates and removal using controlled provider responses. Backend
 integration tests exercise the real API, database, ownership and cleanup with a
 provider test double; live Cloudinary uploads need provider credentials.

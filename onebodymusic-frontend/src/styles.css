@@ -22,7 +22,11 @@
 .avatar-link { min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; }
 .profile-avatar { font-size:1.8rem; font-weight:650; }
 .profile-picture-form { padding-bottom:24px; margin-bottom:24px; border-bottom:1px solid var(--line); }
-.profile-picture-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.profile-picture-button { position:relative; display:inline-flex; border:0; border-radius:50%; padding:0; background:transparent; cursor:pointer; }
+.profile-picture-button:focus-visible { outline:3px solid var(--accent); outline-offset:5px; }
+.profile-picture-button:hover .profile-avatar { box-shadow:0 0 0 3px var(--accent); }
+.profile-picture-button:disabled { cursor:wait; opacity:.7; }
+.profile-picture-camera { position:absolute; right:-2px; bottom:0; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--accent); color:var(--surface); border:2px solid var(--surface); }
 
 .artist-photo-preview { display:block; width:128px; max-width:100%; aspect-ratio:1; object-fit:cover; border-radius:12px; }
 .mini-player { position:fixed; z-index:50; left:12px; right:12px; bottom:calc(82px + env(safe-area-inset-bottom)); display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:14px; box-shadow:0 4px 25px #0003; }
