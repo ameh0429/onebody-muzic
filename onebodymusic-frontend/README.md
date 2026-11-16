@@ -339,3 +339,35 @@ empty an album by deleting or moving its songs; remove an artist's albums, main
 songs and featured credits first. Blocked deletions display guidance without
 removing related records. Members do not see deletion controls, and the API
 continues to enforce administrator access independently.
+
+### Play all and automatic progression
+
+On a playlist, album, or rehearsal detail page, choose **Play all** to start its
+songs in the displayed order. The shared player shows the current queue position
+and offers **Previous song** and **Next song** controls. Supported lock-screen
+media controls can also change tracks. Each track requests fresh playback access
+when loaded; the player does not download the whole queue in advance.
+
+Playback advances when a song finishes and stops after the final song. There is
+no automatic repeat or shuffle. If a song cannot load, playback stops with an
+error; retry with **Refresh playback access**, or choose Next/Previous. Browser
+autoplay restrictions can require pressing Play again.
+
+The queue continues while browsing. **Load audio** on a different song replaces
+it with single-song playback. Closing the player, signing out, or reloading clears
+the queue. Play all captures the displayed song order when pressed; press it again
+to use changes made to a playlist afterward. Empty collections cannot be played.
+
+The focused queue browser checks use controlled API responses and real decoded
+WAV audio, without a database or provider credentials. After `npm run build`, with
+Playwright available, run:
+
+```sh
+BROWSER_EXECUTABLE_PATH=/usr/bin/chromium node tests/player.browser.cjs
+```
+
+Omit `BROWSER_EXECUTABLE_PATH` when using Playwright's installed browser. The test
+starts and stops its own Vite preview server. It covers natural song completion,
+queue boundaries, Previous/Next, refreshing access, navigation, albums and
+rehearsals, request failures and retry, cancellation, mobile overflow, and session
+loss. The existing `tests/browser.cjs` separately checks real API/database flows.
