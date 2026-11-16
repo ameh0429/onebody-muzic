@@ -12,7 +12,7 @@ const Playlists = lazy(() => import('../features/playlists/Playlists'));
 const PlaylistDetail = lazy(() => import('../features/playlists/Playlists').then((m) => ({ default: m.PlaylistDetail })));
 const Rehearsals = lazy(() => import('../features/rehearsals/Rehearsals'));
 const RehearsalDetail = lazy(() => import('../features/rehearsals/Rehearsals').then((m) => ({ default: m.RehearsalDetail })));
-const Notifications = lazy(() => import('../features/notifications/Notifications'));
+const Notifications = lazy(() => import('../features/notifications/NotificationsPage'));
 const Profile = lazy(() => import('../features/profile/Profile'));
 const Admin = lazy(() => import('../features/admin/Admin'));
 const Upload = lazy(() => import('../features/admin/Upload'));
