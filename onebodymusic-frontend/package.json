@@ -9,7 +9,8 @@
     "typecheck": "tsc -b",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
-    "test:browser": "node tests/browser.cjs"
+    "test:browser": "node tests/browser.cjs",
+    "test:pwa": "node tests/pwa.cjs"
   },
   "dependencies": {
     "react": "^19.2.0",

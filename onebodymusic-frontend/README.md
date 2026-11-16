@@ -371,3 +371,9 @@ starts and stops its own Vite preview server. It covers natural song completion,
 queue boundaries, Previous/Next, refreshing access, navigation, albums and
 rehearsals, request failures and retry, cancellation, mobile overflow, and session
 loss. The existing `tests/browser.cjs` separately checks real API/database flows.
+
+## Production PWA
+
+See [PWA deployment and testing](docs/PWA.md) for installation, offline behavior,
+privacy rules, HTTPS/cache headers, update deployment, automated checks and the
+Android/iOS/desktop release checklist.

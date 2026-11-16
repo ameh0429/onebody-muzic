@@ -307,10 +307,10 @@ async function main() {
   checks.push('admin delete: dependency conflicts, featured credits, confirmation cancellation, network failure/retry, song→album→artist deletion, refreshed lists and stopping deleted audio');
   for(const width of [320,768]) { await page.setViewportSize({width,height:900});for(const path of ['/','/songs',`/songs/${songs[0].id}`,'/artists',`/artists/${artist.id}`,'/albums',`/albums/${album.id}`,'/playlists','/rehearsals','/profile','/admin','/admin/upload']) {await go(path);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`overflow: ${width} ${path}`);}}
   checks.push('additional no-overflow checks at 320px and 768px');
-  const manifest=await(await fetch(`${base}/manifest.webmanifest`)).json();assert.equal(manifest.display,'standalone');assert.equal(manifest.icons.length,2);
+  const manifest=await(await fetch(`${base}/manifest.webmanifest`)).json();assert.equal(manifest.display,'standalone');assert.equal(manifest.icons.length,3);
   const cache = await page.evaluate(async()=>{await navigator.serviceWorker.ready;const names=await caches.keys();const urls=[];for(const name of names)for(const r of await(await caches.open(name)).keys())urls.push(r.url);return urls;}); assert.ok(cache.length); assert.equal(cache.some((u)=>u.includes('/api/')),false);
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some((k)=>/token|auth|user/i.test(k))),false); checks.push('installed service worker caches static shell only; no persisted access token');
-  await context.setOffline(true); await page.reload(); await page.getByRole('heading',{name:'Welcome back.'}).waitFor(); await context.setOffline(false); checks.push('offline app shell loads without retaining private session');
+  await context.setOffline(true); await page.reload(); await page.getByRole('heading',{name:'You’re offline'}).waitFor(); await context.setOffline(false); checks.push('offline app shell loads without retaining private session');
   assert.deepEqual(errors,[]); checks.push('no browser JavaScript errors'); console.log(JSON.stringify({passed:checks}));
  } catch(error) { await page?.screenshot({path:'/tmp/onebodymusic-browser-failure.png',fullPage:true}).catch(()=>undefined); throw error; } finally {
   await browser?.close(); for(const {child,stopped}of processes.reverse()){if(child.exitCode===null)child.kill('SIGTERM');await stopped;}
