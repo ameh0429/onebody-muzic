@@ -1,3 +1,4 @@
+import { notificationFailureReason } from './notification-error';
 import { BeforeApplicationShutdown, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QueryTypes } from 'sequelize';
@@ -13,7 +14,7 @@ export class NotificationsWorker implements OnApplicationBootstrap, BeforeApplic
     if (this.config.get('NODE_ENV') === 'test') return;
     const run = () => {
       if (this.running) return;
-      this.running = this.tick().catch(() => this.logger.warn('Notification delivery failed; will retry')).finally(() => { this.running = undefined; });
+      this.running = this.tick().catch(error => this.logger.warn(`Notification worker failed: ${notificationFailureReason(error)}; next check in 60 seconds`)).finally(() => { this.running = undefined; });
     };
     run(); this.timer = setInterval(run, 60000); this.timer.unref();
   }
@@ -52,6 +53,7 @@ export class NotificationsWorker implements OnApplicationBootstrap, BeforeApplic
           } catch (error) {
             const status = (error as { statusCode?: number }).statusCode;
             const expired = status === 404 || status === 410;
+            if (!expired && (row.pushAttempts === 0 || row.pushAttempts >= 2)) this.logger.warn(`Push delivery failed: ${notificationFailureReason(error)}`);
             return { endpoint: s.endpoint, expired, retry: !expired };
           }
         }));
