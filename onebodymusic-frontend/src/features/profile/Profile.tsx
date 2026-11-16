@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { api, message } from '../../lib/api';
 import type { User } from '../../lib/types';
 import { Heading } from '../../components/ui';
+import { InstallApp } from '../../components/PwaPrompt';
 import { Avatar } from '../../components/Avatar';
 
 const imageLimit = Number(import.meta.env.VITE_IMAGE_MAX_BYTES || 5242880);
@@ -73,6 +74,7 @@ export default function Profile() {
       </form>
       {error && <p className="error mt-4" role="alert">{error}</p>}{success && <p className="text-accent mt-4" role="status">{success}</p>}
       {user?.role === 'ADMIN' && <Link className="btn secondary mt-6" to="/admin"><ShieldCheck size={18}/>Admin workspace</Link>}
+      <InstallApp/>
       <button className="quiet mt-6" onClick={logout} disabled={!!busy}><LogOut size={18}/>Sign out</button>
     </section>
   </>;

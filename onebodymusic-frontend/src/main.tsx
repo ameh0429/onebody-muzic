@@ -8,4 +8,4 @@ import { queryClient } from './lib/query';
 import App from './app/App';
 import PwaPrompt from './components/PwaPrompt';
 import './styles.css';
-createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}><ErrorBoundary><AuthProvider><Connectivity><App/></Connectivity><PwaPrompt/></AuthProvider></ErrorBoundary></QueryClientProvider></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><QueryClientProvider client={queryClient}><ErrorBoundary><AuthProvider><PwaPrompt><Connectivity><App/></Connectivity></PwaPrompt></AuthProvider></ErrorBoundary></QueryClientProvider></StrictMode>);

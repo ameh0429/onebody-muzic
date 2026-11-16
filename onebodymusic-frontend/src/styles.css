@@ -72,9 +72,8 @@
 .connection-status.is-offline { background:#59301d; color:#fff; text-align:center; }
 .offline-screen { max-width:600px; margin:10vh auto; padding:24px; }
 .offline-screen p { margin:18px 0; }
-.pwa-controls { padding:12px 16px; max-width:640px; margin:0 auto; }
-.pwa-install { font-size:.85rem; padding:12px; }
-.pwa-install summary { cursor:pointer; min-height:44px; }
+.pwa-install { margin-top:24px; padding-top:24px; border-top:1px solid var(--line); font-size:.85rem; }
+.pwa-install summary { cursor:pointer; min-height:44px; width:fit-content; }
 .pwa-install p { margin:12px 0; }
 .pwa-update { position:fixed; z-index:100; bottom:calc(16px + env(safe-area-inset-bottom)); left:16px; right:16px; max-width:600px; margin:auto; padding:18px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 30px #0005; }
 .pwa-update p { margin-bottom:12px; }

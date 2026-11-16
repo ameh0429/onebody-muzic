@@ -28,11 +28,18 @@ const { chromium } = require('playwright');
   assert.ok(manifest.icons.some(i=>i.purpose==='maskable'));
   const cdp=await context.newCDPSession(page); const appManifest=await cdp.send('Page.getAppManifest'); assert.deepEqual(appManifest.errors,[]); const eligibility=await cdp.send('Page.getInstallabilityErrors'); // Playwright contexts are incognito: assert there are no application eligibility errors.
   assert.deepEqual(eligibility.installabilityErrors.map(error=>error.errorId),['in-incognito']); await cdp.detach();
-  await page.getByText('Install OnebodyMusic',{exact:true}).click();
+  assert.equal(await page.locator('.connection-status').count(),0);
+  assert.equal(await page.getByText('Install app',{exact:true}).count(),0);
+  const user={id:'pwa-member',name:'PWA Member',email:'pwa@example.test',role:'MEMBER',status:'ACTIVE'};
+  const signedIn=async route=>{ const path=new URL(route.request().url()).pathname; await route.fulfill({json:path.endsWith('/auth/refresh') ? {user,accessToken:'test-access',expiresIn:3600} : user}); };
+  await page.route('**/api/v1/**',signedIn);
+  await page.goto(base+'/profile'); await page.getByRole('heading',{name:'Your profile',exact:true}).waitFor();
+  await page.getByText('Install app',{exact:true}).click();
   await page.evaluate(() => { const event=new Event('beforeinstallprompt',{cancelable:true}); event.prompt=async()=>{ window.installRequested=true; }; event.userChoice=Promise.resolve({outcome:'accepted'}); window.dispatchEvent(event); });
   await page.getByRole('button',{name:'Install app',exact:true}).click(); assert.equal(await page.evaluate(()=>window.installRequested),true);
-  await page.evaluate(()=>window.dispatchEvent(new Event('appinstalled'))); await page.getByText('Install OnebodyMusic',{exact:true}).waitFor({state:'detached'});
+  await page.evaluate(()=>window.dispatchEvent(new Event('appinstalled'))); await page.locator('.pwa-install').waitFor({state:'detached'});
   for(const width of [320,390,768,1440]) { await page.setViewportSize({width,height:900}); assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow at ${width}`); }
+  await page.unroute('**/api/v1/**',signedIn); await page.goto(base+'/login'); await page.getByRole('heading',{name:'Welcome back.'}).waitFor();
   const urls=await page.evaluate(async()=>{ const result=[]; for(const name of await caches.keys()) for(const request of await(await caches.open(name)).keys()) result.push(request.url); return result; });
   assert.ok(urls.length); assert.ok(urls.every(url=>new URL(url).origin===locationOrigin(base) && !url.includes('/api/') && !/ticket|cloudinary|\.mp3|\.m4a/u.test(url)));
   await context.setOffline(true); await page.reload(); await page.getByRole('heading',{name:'You’re offline'}).waitFor();
@@ -48,7 +55,7 @@ const { chromium } = require('playwright');
   await page.getByRole('button',{name:'Reload to update'}).click(); await page.waitForFunction(()=>document.title==='OnebodyMusic updated');
   await page.waitForFunction(async()=>{ const names=await caches.keys(); for(const name of names) {const cache=await caches.open(name); for(const r of await cache.keys())if(r.url.includes('index.html')&&r.url.includes('__WB_REVISION__=')&&!r.url.includes('pwa-test-version-two'))return false;}return true; });
   const ios=await browser.newContext({userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',viewport:{width:390,height:844},isMobile:true});
-  const iosPage=await ios.newPage(); await iosPage.goto(base); await iosPage.getByText('Install OnebodyMusic',{exact:true}).click(); await iosPage.getByText(/In Safari, tap Share/).waitFor();
+  const iosPage=await ios.newPage(); await iosPage.route('**/api/v1/**',signedIn); await iosPage.goto(base+'/profile'); await iosPage.getByText('Install app',{exact:true}).click(); await iosPage.getByText(/In Safari, tap Share/).waitFor();
   assert.deepEqual(errors,[]);
   console.log('PASS: manifest/icons, install event flow, iOS guidance, static-only cache isolation, offline shell/reconnection, mobile widths, real worker update/defer/apply and stale precache removal. Native OS installation and deployed HTTPS require manual device checks.');
  } finally { await browser?.close(); if(server)await new Promise(r=>server.close(r)); await rm(root,{recursive:true,force:true}); }
