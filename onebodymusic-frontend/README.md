@@ -371,30 +371,3 @@ starts and stops its own Vite preview server. It covers natural song completion,
 queue boundaries, Previous/Next, refreshing access, navigation, albums and
 rehearsals, request failures and retry, cancellation, mobile overflow, and session
 loss. The existing `tests/browser.cjs` separately checks real API/database flows.
-
-## Bulk music upload
-
-On **Admin → Add to the library**, use **Bulk music upload** below the single-song
-form. Choose default artist/album/category, then select or drop multiple MP3/M4A
-files. File names supply editable titles. Apply defaults to pending songs or edit
-each row independently, including optional artwork. Duplicate selections with the
-same name, size and last-modified time are ignored within the current queue.
-
-Review validation messages, then choose **Upload pending / retry failed songs**.
-The queue publishes one song at a time using the existing admin media/song APIs.
-Completed songs are skipped on subsequent runs; failed or cancelled rows can be
-corrected and retried. Clear completed rows to release their selected files.
-
-Keep this page open: the queue and selected files are held in memory and do not
-resume after navigation or reload. Cancellation stops queued work and aborts active
-media requests; a song already saving is allowed to finish. Known unused assets
-are deleted where possible, with server reconciliation handling remaining uploads.
-If a save response is lost or returns a server error, the row requires checking the
-library and cannot be retried automatically. This avoids publishing a duplicate
-with freshly uploaded audio when the first save may have succeeded. Do not select
-the file again until its library status is confirmed. No backend idempotency key or
-background upload worker is introduced.
-
-Bulk uploads require the same Cloudinary configuration and active administrator
-permissions as individual uploads. Frontend lifecycle tests mock provider/API
-responses; they do not establish real Cloudinary connectivity.
