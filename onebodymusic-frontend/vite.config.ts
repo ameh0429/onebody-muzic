@@ -19,6 +19,7 @@ export default defineConfig({
       ],
     },
     workbox: {
+      importScripts: ['/push-events.js'],
       // Explicit build-only allowlist: never add API, auth, artwork or audio runtime caches.
       globPatterns: ['index.html', 'assets/**/*.{js,css,woff2}', 'icon*.{png,svg}'],
       navigateFallback: 'index.html', navigateFallbackDenylist: [/^\/api(?:\/|$)/],

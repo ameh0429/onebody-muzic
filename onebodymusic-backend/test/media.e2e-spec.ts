@@ -1,3 +1,4 @@
+import { NotificationsModule } from '../src/notifications/notifications.module';
 import { ProfilePictureService } from '../src/media/profile-picture.service';
 import { CloudinaryOperationError } from '../src/media/errors/media-operation.error';
 import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
@@ -42,7 +43,7 @@ describe('Admin multipart media uploads', () => {
   beforeAll(async () => {
     Object.assign(process.env, { JWT_SECRET: randomBytes(48).toString('hex'), CORS_ALLOWED_ORIGINS: 'http://localhost:5173', DATABASE_URL: 'postgresql://localhost/test', MEDIA_ENABLED: 'true', CLOUDINARY_CLOUD_NAME: 'test-cloud', CLOUDINARY_API_KEY: 'test-key', CLOUDINARY_API_SECRET: 'test-secret', MEDIA_AUDIO_MAX_BYTES: '4096', MEDIA_IMAGE_MAX_BYTES: '1024', MEDIA_MAX_CONCURRENT_UPLOADS: '2' });
     const { AppModule } = await import('../src/app.module');
-    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+    const module = await Test.createTestingModule({ imports: [AppModule] }).overrideModule(NotificationsModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(AlbumsService).useValue({})
       .overrideProvider(ProfilePictureService).useValue({}).overrideProvider(MediaRepository).useValue(repository).overrideProvider(CloudinaryClient).useValue(provider).overrideProvider(MediaCleanupWorker).useValue({}).compile();

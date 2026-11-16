@@ -1,3 +1,4 @@
+import { up as notificationsUp, down as notificationsDown } from './migrations/012-notifications';
 import { up as featuredUp, down as featuredDown } from './migrations/011-song-featured-artists';
 import { up as sessionsUp, down as sessionsDown } from './migrations/010-refresh-sessions';
 import { up as profilePictureUp, down as profilePictureDown } from './migrations/009-user-profile-picture';
@@ -59,7 +60,7 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       name: '011-song-featured-artists',
       up: ({ context }) => featuredUp(context),
       down: ({ context }) => featuredDown(context),
-    }],
+    }, { name: '012-notifications', up: ({ context }) => notificationsUp(context), down: ({ context }) => notificationsDown(context) }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,
   });

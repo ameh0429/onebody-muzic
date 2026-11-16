@@ -1014,3 +1014,60 @@ continues to select main-artist songs; `featuredArtistId=...` selects guest cred
 with the same pagination and other filters. Artist deletion is restricted while
 credited, and song deletion cascades only its featured-credit links. Media
 ownership and playback authorization are unchanged.
+
+
+## Notifications
+
+Apply migration `012-notifications` before starting this version (`npm run db:migrate`,
+or `npm run db:migrate:prod` after building). The inbox is available to active accounts
+at `/api/v1/notifications`, with recipient-scoped read and read-all endpoints and
+`GET/PATCH /api/v1/notifications/preferences`. The API returns 20 items per page,
+newest first, with an unread count. Notifications expire after 90 days.
+
+Database triggers create alerts in the same transaction as registration, account
+access changes, published rehearsals, schedule/details changes, setlist changes,
+and rehearsal deletion (treated as cancellation). Draft rehearsal details are
+never sent to members; publishing a linked rehearsal playlist notifies members.
+Repeated rehearsal updates coalesce into one unread update per rehearsal/recipient.
+No notifications are emitted for personal playlists, profile edits, or routine saves.
+Administrator registration alerts become inaccessible after demotion. Existing
+rehearsal alerts are hidden while the linked playlist is unpublished. Cancellation
+links lead to the schedule rather than a deleted detail page.
+
+All active members receive published rehearsal alerts because this app has no
+choir/group assignment model. A worker running in the API checks every minute for
+rehearsals within the next 24 hours, honoring reminder preferences. Each schedule
+has one reminder per recipient, including across restarts and multiple API instances.
+If the API was down at the exact 24-hour point, the next run catches up while the
+rehearsal is still in the future. Keep an API instance running for reminders.
+Workers are disabled automatically under `NODE_ENV=test`; integration tests invoke
+individual worker ticks explicitly.
+
+Web Push is optional. Configure `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, and
+`WEB_PUSH_SUBJECT` (a real `mailto:` contact or HTTPS URL) in secure backend settings.
+Generate a matching VAPID pair with the installed `web-push` package, keep the private
+key private, and retain the pair across deployments. Startup validates the pair.
+Serve the frontend over HTTPS and allow outbound HTTPS to the browser providers
+used by your members (`fcm.googleapis.com`, `updates.push.services.mozilla.com`,
+`web.push.apple.com`, or the applicable `*.notify.windows.com` host). No signing key
+is generated or committed by this feature. The public key is served only to
+signed-in clients through `/notifications/push/options`.
+
+Members opt in from Profile. Push subscriptions are scoped to their account, capped
+at ten devices, and deleted on provider 404/410 responses. Push has a one-hour TTL,
+generic lock-screen text, three delivery attempts, and a stable notification tag.
+Transient provider failures retry after five minutes. Delivery is best effort: an
+interruption after provider acceptance may repeat delivery, with the stable tag
+replacing the existing alert. Reading an inbox item suppresses pending push for it.
+Signing out unsubscribes the current browser; it does not disable other devices.
+No private inbox contents or credentials are stored in the service worker cache.
+
+Email delivery is not configured in this repository. Pending/suspended accounts
+cannot access the inbox until active, and approval alerts are visible after sign-in.
+New-music digests and provider-processing alerts are not part of this initial release.
+
+Validation: `npm test` and `npm run test:integration` (dedicated migrated test database).
+The integration suite covers transactional rollback, draft visibility, recipient
+isolation, read state, preferences, cancellation, access revocation and reminder
+idempotence. Push provider behavior is exercised with a test double; real browser
+push delivery still requires configured keys and a supported device.

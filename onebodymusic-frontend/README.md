@@ -377,3 +377,30 @@ loss. The existing `tests/browser.cjs` separately checks real API/database flows
 See [PWA deployment and testing](docs/PWA.md) for installation, offline behavior,
 privacy rules, HTTPS/cache headers, update deployment, automated checks and the
 Android/iOS/desktop release checklist.
+
+
+### Notifications
+
+Use the bell in the signed-in header to open the inbox. Its badge shows unread
+notifications and refreshes every 30 seconds or when the window regains focus.
+Choose **View details** to mark an item read and open its destination, or use
+**Mark as read** / **Mark all as read**. Existing role and publication checks still
+apply to destination screens. Notifications remain available for 90 days.
+
+Profile contains separate settings for rehearsal/setlist changes and 24-hour
+reminders. Account alerts remain enabled. **Enable notifications on this device**
+asks for browser permission only when pressed, after server Web Push configuration
+is available. No permission prompt appears at login. Denying permission leaves the
+inbox usable. On iPhone/iPad, use a supported Safari-installed home-screen app.
+**Disable push notifications** disables push account-wide and unsubscribes this
+device. Signing out unsubscribes this device without changing other devices.
+
+Rebuild and deploy the frontend and service worker together with migration
+`012-notifications` and the updated API. Allow the service worker update to apply.
+Keep `push-events.js` deployed beside `sw.js`; notification clicks always navigate
+to the same-origin inbox. Push payloads use generic text and never cache private data.
+
+Run `node tests/notifications.browser.cjs` after `npm run build` for controlled
+inbox/read-state/preference/error/mobile checks. Existing `npm run test:pwa` covers
+service worker caching, offline recovery and update behavior. Live OS push delivery
+requires server signing keys, HTTPS, browser permission, and device checks.

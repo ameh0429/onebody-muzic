@@ -1,7 +1,11 @@
+import { createECDH } from 'node:crypto';
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
+  @IsOptional() @IsString() WEB_PUSH_PUBLIC_KEY?: string;
+  @IsOptional() @IsString() WEB_PUSH_PRIVATE_KEY?: string;
+  @IsOptional() @IsString() WEB_PUSH_SUBJECT?: string;
   @IsIn(['lax', 'strict', 'none'])
   AUTH_COOKIE_SAME_SITE: 'lax' | 'strict' | 'none' = 'lax';
 
@@ -115,6 +119,14 @@ export class EnvironmentVariables {
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
   const validated = plainToInstance(EnvironmentVariables, config);
+  const push = [validated.WEB_PUSH_PUBLIC_KEY, validated.WEB_PUSH_PRIVATE_KEY, validated.WEB_PUSH_SUBJECT];
+  if (push.some(Boolean)) {
+    try {
+      if (!push.every(Boolean) || !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/[^\s]+)$/.test(validated.WEB_PUSH_SUBJECT!)) throw new Error();
+      const key = createECDH('prime256v1'); key.setPrivateKey(Buffer.from(validated.WEB_PUSH_PRIVATE_KEY!, 'base64url'));
+      if (key.getPublicKey().toString('base64url') !== validated.WEB_PUSH_PUBLIC_KEY) throw new Error();
+    } catch { throw new Error('Invalid WEB_PUSH signing configuration: supply matching VAPID keys and a contact subject.'); }
+  }
   const errors = validateSync(validated, { skipMissingProperties: false });
   const origins = validated.CORS_ALLOWED_ORIGINS;
   const invalidOrigins = !Array.isArray(origins) || origins.length === 0 || origins.some((origin) => {

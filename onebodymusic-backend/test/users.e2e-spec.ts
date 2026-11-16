@@ -1,3 +1,4 @@
+import { NotificationsModule } from '../src/notifications/notifications.module';
 import { AuthRateLimitStore } from '../src/auth/rate-limit/auth-rate-limit.store';
 import { RehearsalsService } from '../src/rehearsals/rehearsals.service';
 import { PlaylistsService } from '../src/playlists/playlists.service';
@@ -34,7 +35,7 @@ describe('User management authorization and DTOs', () => {
     process.env.JWT_ACCESS_TOKEN_TTL_SECONDS = '900';
     const { AppModule } = await import('../src/app.module');
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
+      .overrideModule(MediaModule).useModule(TestDatabaseModule).overrideModule(NotificationsModule).useModule(TestDatabaseModule).overrideModule(DatabaseModule).useModule(TestDatabaseModule)
       .overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) }).overrideProvider(AuthRepository).useValue({ findById: async (id: string) => records.get(id) ?? null })
       .overrideProvider(AlbumsService).useValue({}).overrideProvider(ArtistsService).useValue({}).overrideProvider(SongsService).useValue({}).overrideProvider(RehearsalsService).useValue({}).overrideProvider(PlaylistsService).useValue({}).overrideProvider(UsersService).useValue(service).compile();
     app = module.createNestApplication(); configureApp(app); await app.init();

@@ -1,3 +1,4 @@
+import NotificationPreferences from '../notifications/NotificationPreferences';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
@@ -74,6 +75,7 @@ export default function Profile() {
       </form>
       {error && <p className="error mt-4" role="alert">{error}</p>}{success && <p className="text-accent mt-4" role="status">{success}</p>}
       {user?.role === 'ADMIN' && <Link className="btn secondary mt-6" to="/admin"><ShieldCheck size={18}/>Admin workspace</Link>}
+      <NotificationPreferences/>
       <InstallApp/>
       <button className="quiet mt-6" onClick={logout} disabled={!!busy}><LogOut size={18}/>Sign out</button>
     </section>
