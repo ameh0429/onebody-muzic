@@ -2,6 +2,10 @@
 
 NestJS 11 REST API with strict TypeScript, PostgreSQL, Sequelize 6, `sequelize-typescript`, Swagger, and Jest. Requires Node.js 24 (recommended; see `package.json` for supported versions), npm, and PostgreSQL. Member registration, JWT authentication, user administration, artist management, and album management, secure media uploads, and song management/playback are implemented. Other library modules remain deferred.
 
+## Production deployment on Render
+
+See [Render deployment guide](docs/DEPLOYMENT.md) for the complete environment reference, production commands, PostgreSQL/Cloudinary setup, safe pre-deploy migrations, verification checklist and troubleshooting. The repository-root `render.yaml` provides a reviewed starting configuration. Production disables Swagger routes and emits JSON application logs; local Swagger remains available.
+
 ## Install and start
 
 From the repository root:
@@ -57,7 +61,7 @@ CORS controls browser access, not authentication. Unapproved browser origins rec
 
 ## Swagger and health
 
-Open `http://localhost:3000/api/docs`. Expand **Health → GET /api/v1/health**, choose **Try it out**, then **Execute**. The OpenAPI JSON is at `/api/docs-json`. **Authorize** accepts the `accessToken` returned by login. Paste the token without the `Bearer` prefix; Swagger adds it automatically. Health remains public.
+In development, open `http://localhost:3000/api/docs`. Swagger UI and schema routes are disabled when `NODE_ENV=production`. Expand **Health → GET /api/v1/health**, choose **Try it out**, then **Execute**. The OpenAPI JSON is at `/api/docs-json`. **Authorize** accepts the `accessToken` returned by login. Paste the token without the `Bearer` prefix; Swagger adds it automatically. Health remains public.
 
 ```sh
 curl http://localhost:3000/api/v1/health
