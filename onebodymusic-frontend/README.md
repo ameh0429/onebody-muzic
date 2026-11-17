@@ -384,6 +384,8 @@ Android/iOS/desktop release checklist.
 
 Use the bell in the signed-in header to open the inbox. Its badge shows unread
 notifications and refreshes every 30 seconds or when the window regains focus.
+New unread items arriving while signed in also show a dismissible in-app popup;
+existing inbox items do not replay as popups on login.
 Choose **View details** to mark an item read and open its destination, or use
 **Mark as read** / **Mark all as read**. Existing role and publication checks still
 apply to destination screens. Notifications remain available for 90 days.
@@ -395,6 +397,10 @@ is available. No permission prompt appears at login. Denying permission leaves t
 inbox usable. On iPhone/iPad, use a supported Safari-installed home-screen app.
 **Disable push notifications** disables push account-wide and unsubscribes this
 device. Signing out unsubscribes this device without changing other devices.
+An explicit device opt-in is remembered separately for each account in this
+browser. Returning to that account restores its subscription automatically when
+browser permission is still granted and account push preferences remain enabled.
+Accounts that have not opted in never inherit another account’s subscription.
 
 Rebuild and deploy the frontend and service worker together with migration
 `012-notifications` and the updated API. Allow the service worker update to apply.
