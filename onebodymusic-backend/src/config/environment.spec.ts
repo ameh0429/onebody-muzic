@@ -1,8 +1,16 @@
+import webpush from 'web-push';
 import { validateEnvironment as validate } from './environment';
 
 const validateEnvironment = (config: Record<string, unknown>) => validate({ DATABASE_URL: 'postgresql://localhost/onebodymusic', JWT_SECRET: 'test-only-secret-at-least-32-characters', ...config });
 
 describe('startup configuration validation', () => {
+  it('requires a complete matching optional VAPID pair and contact', () => {
+    const keys = webpush.generateVAPIDKeys();
+    const base = { CORS_ALLOWED_ORIGINS: 'http://localhost:5173', WEB_PUSH_PUBLIC_KEY: keys.publicKey };
+    expect(() => validateEnvironment(base)).toThrow('WEB_PUSH');
+    expect(() => validateEnvironment({ ...base, WEB_PUSH_PRIVATE_KEY: webpush.generateVAPIDKeys().privateKey, WEB_PUSH_SUBJECT: 'mailto:ops@example.test' })).toThrow('WEB_PUSH');
+    expect(() => validateEnvironment({ ...base, WEB_PUSH_PRIVATE_KEY: keys.privateKey, WEB_PUSH_SUBJECT: 'mailto:ops@example.test' })).not.toThrow();
+  });
   it('defaults session cookies to Lax and requires production HTTPS for SameSite=None', () => {
     const base = { CORS_ALLOWED_ORIGINS: 'http://localhost:5173' };
     expect(validateEnvironment(base).AUTH_COOKIE_SAME_SITE).toBe('lax');

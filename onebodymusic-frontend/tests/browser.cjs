@@ -171,7 +171,7 @@ async function main() {
   const photo = page.getByLabel('Profile picture',{exact:true});
   await photo.setInputFiles({name:'invalid.txt',mimeType:'text/plain',buffer:Buffer.from('invalid')});
   await page.getByRole('alert').filter({hasText:'Choose a non-empty JPEG'}).waitFor();
-  assert.equal(await page.getByRole('button',{name:'Upload picture',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'Upload picture',exact:true}).count(),0);
   const photoBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=','base64');
   const photoUrl=`data:image/png;base64,${photoBytes.toString('base64')}`;
   let pictureRequests=0; let pictureFailure=false;
@@ -182,25 +182,22 @@ async function main() {
     const current=await User.findOne({where:{email:emails[1]}});
     await r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({id:current.id,name:current.name,email:current.email,role:current.role,status:current.status,profileImageUrl})});
   });
-  await photo.setInputFiles({name:'profile.png',mimeType:'image/png',buffer:photoBytes});
-  await page.locator('.profile-avatar img').waitFor();
-  await page.getByRole('button',{name:'Cancel selection',exact:true}).click();
-  await page.locator('.profile-avatar img').waitFor({state:'detached'});
-  assert.equal(await page.locator('.profile-avatar img').count(),0);
+  const pickerOpened=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'Change profile picture',exact:true}).click();
+  const chooser=await pickerOpened;
+  await chooser.setFiles([]);
   assert.equal(pictureRequests,0);
   await photo.setInputFiles({name:'profile.png',mimeType:'image/png',buffer:photoBytes});
-  await page.getByRole('button',{name:'Upload picture',exact:true}).click();
   await page.getByRole('status').filter({hasText:'Your profile picture has been updated.'}).waitFor();
   await page.locator('.topbar .avatar img').waitFor();
   assert.equal(await page.locator('.avatar img').count(),2);
   assert.equal(await page.locator('.profile-avatar img').getAttribute('src'),photoUrl);
   pictureFailure=true;
   await photo.setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:photoBytes});
-  await page.getByRole('button',{name:'Replace picture',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Picture upload could not be completed'}).waitFor();
   assert.equal(await page.locator('.topbar .avatar img').getAttribute('src'),photoUrl);
   pictureFailure=false;
-  await page.getByRole('button',{name:'Replace picture',exact:true}).click();
+  await photo.setInputFiles({name:'replacement.png',mimeType:'image/png',buffer:photoBytes});
   await page.getByRole('status').filter({hasText:'Your profile picture has been updated.'}).waitFor();
   await page.getByRole('button',{name:'Remove picture',exact:true}).click();
   await page.getByRole('status').filter({hasText:'Your profile picture has been removed.'}).waitFor();
@@ -208,7 +205,7 @@ async function main() {
   assert.equal(await page.locator('.avatar img,.profile-avatar img').count(),0);
   assert.equal(pictureRequests,4);
   await page.unroute('**/api/v1/users/me/picture');
-  checks.push('member profile picture validation, preview/cancel, upload, shared avatars and removal (controlled provider responses)');
+  checks.push('member avatar opens device picker, empty selection stays unchanged, validation, immediate upload, failed-upload retry, shared avatars and removal (controlled provider responses)');
   await go('/profile'); await page.getByRole('button',{name:'Sign out',exact:true}).click(); await login(emails[0]); await go('/admin/upload');
   const artistPhotoAssets=[];
   await page.route('https://res.cloudinary.com/frontend-artist-test/**',r=>r.fulfill({status:200,contentType:'image/png',body:photoBytes}));
@@ -307,10 +304,10 @@ async function main() {
   checks.push('admin delete: dependency conflicts, featured credits, confirmation cancellation, network failure/retry, song→album→artist deletion, refreshed lists and stopping deleted audio');
   for(const width of [320,768]) { await page.setViewportSize({width,height:900});for(const path of ['/','/songs',`/songs/${songs[0].id}`,'/artists',`/artists/${artist.id}`,'/albums',`/albums/${album.id}`,'/playlists','/rehearsals','/profile','/admin','/admin/upload']) {await go(path);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`overflow: ${width} ${path}`);}}
   checks.push('additional no-overflow checks at 320px and 768px');
-  const manifest=await(await fetch(`${base}/manifest.webmanifest`)).json();assert.equal(manifest.display,'standalone');assert.equal(manifest.icons.length,2);
+  const manifest=await(await fetch(`${base}/manifest.webmanifest`)).json();assert.equal(manifest.display,'standalone');assert.equal(manifest.icons.length,3);
   const cache = await page.evaluate(async()=>{await navigator.serviceWorker.ready;const names=await caches.keys();const urls=[];for(const name of names)for(const r of await(await caches.open(name)).keys())urls.push(r.url);return urls;}); assert.ok(cache.length); assert.equal(cache.some((u)=>u.includes('/api/')),false);
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some((k)=>/token|auth|user/i.test(k))),false); checks.push('installed service worker caches static shell only; no persisted access token');
-  await context.setOffline(true); await page.reload(); await page.getByRole('heading',{name:'Welcome back.'}).waitFor(); await context.setOffline(false); checks.push('offline app shell loads without retaining private session');
+  await context.setOffline(true); await page.reload(); await page.getByRole('heading',{name:'You’re offline'}).waitFor(); await context.setOffline(false); checks.push('offline app shell loads without retaining private session');
   assert.deepEqual(errors,[]); checks.push('no browser JavaScript errors'); console.log(JSON.stringify({passed:checks}));
  } catch(error) { await page?.screenshot({path:'/tmp/onebodymusic-browser-failure.png',fullPage:true}).catch(()=>undefined); throw error; } finally {
   await browser?.close(); for(const {child,stopped}of processes.reverse()){if(child.exitCode===null)child.kill('SIGTERM');await stopped;}

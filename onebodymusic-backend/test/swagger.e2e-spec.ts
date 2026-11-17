@@ -1,3 +1,4 @@
+import { NotificationsModule } from '../src/notifications/notifications.module';
 import { ProfilePictureService } from '../src/media/profile-picture.service';
 import { INestApplication, Module, RequestMethod } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -25,7 +26,7 @@ describe('Complete runtime route and OpenAPI contract audit', () => {
   beforeAll(async () => {
     Object.assign(process.env, { NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost/test', JWT_SECRET: randomBytes(48).toString('hex'), CORS_ALLOWED_ORIGINS: 'http://localhost:5173', MEDIA_ENABLED: 'false' });
     const { AppModule } = await import('../src/app.module');
-    let builder = Test.createTestingModule({ imports: [AppModule, MediaModule] }).overrideModule(DatabaseModule).useModule(EmptyDatabase).overrideProvider(AuthRepository).useValue({}).overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) });
+    let builder = Test.createTestingModule({ imports: [AppModule, MediaModule] }).overrideModule(NotificationsModule).useModule(EmptyDatabase).overrideModule(DatabaseModule).useModule(EmptyDatabase).overrideProvider(AuthRepository).useValue({}).overrideProvider(AuthRateLimitStore).useValue({ consume: async () => ({ hits: 1, retryAfter: 60 }) });
     for (const provider of [UsersService, ArtistsService, AlbumsService, SongsService, MediaService, PlaylistsService, RehearsalsService, ProfilePictureService]) builder = builder.overrideProvider(provider).useValue({});
     // MediaRepository requires models even though the controller is denied before it runs.
     const { MediaRepository } = await import('../src/media/media.repository');

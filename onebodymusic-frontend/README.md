@@ -222,15 +222,16 @@ README troubleshooting section for local Windows networking, credentials and TLS
 
 ### Profile pictures
 
-On Profile, choose a JPEG, PNG or WebP image, review the preview, and select
-**Upload picture** (or **Replace picture**). **Cancel selection** keeps the saved
-picture, and **Remove picture** restores your initial avatar. The saved picture
+On Profile, click your picture to open the device image picker. Selecting a valid
+JPEG, PNG or WebP uploads immediately, without a preview or save step. Closing the
+picker leaves your picture unchanged. **Remove picture** restores your initial
+avatar. The saved picture
 appears on Profile and in the header/sidebar, including after signing in again.
 Broken image links fall back to your initial. The default size limit is 5 MiB;
 `VITE_IMAGE_MAX_BYTES` should match the backend limit. Pictures use public image
 links. Uploads require the backend profile-picture migration and Cloudinary setup.
 
-The browser workflow also checks picture validation, preview/cancellation, upload,
+The browser workflow also checks picture validation, immediate upload, picker cancellation, upload-error retry,
 shared avatar updates and removal using controlled provider responses. Backend
 integration tests exercise the real API, database, ownership and cleanup with a
 provider test double; live Cloudinary uploads need provider credentials.
@@ -371,3 +372,36 @@ starts and stops its own Vite preview server. It covers natural song completion,
 queue boundaries, Previous/Next, refreshing access, navigation, albums and
 rehearsals, request failures and retry, cancellation, mobile overflow, and session
 loss. The existing `tests/browser.cjs` separately checks real API/database flows.
+
+## Production PWA
+
+See [PWA deployment and testing](docs/PWA.md) for installation, offline behavior,
+privacy rules, HTTPS/cache headers, update deployment, automated checks and the
+Android/iOS/desktop release checklist.
+
+
+### Notifications
+
+Use the bell in the signed-in header to open the inbox. Its badge shows unread
+notifications and refreshes every 30 seconds or when the window regains focus.
+Choose **View details** to mark an item read and open its destination, or use
+**Mark as read** / **Mark all as read**. Existing role and publication checks still
+apply to destination screens. Notifications remain available for 90 days.
+
+Profile contains separate settings for rehearsal/setlist changes and 24-hour
+reminders. Account alerts remain enabled. **Enable notifications on this device**
+asks for browser permission only when pressed, after server Web Push configuration
+is available. No permission prompt appears at login. Denying permission leaves the
+inbox usable. On iPhone/iPad, use a supported Safari-installed home-screen app.
+**Disable push notifications** disables push account-wide and unsubscribes this
+device. Signing out unsubscribes this device without changing other devices.
+
+Rebuild and deploy the frontend and service worker together with migration
+`012-notifications` and the updated API. Allow the service worker update to apply.
+Keep `push-events.js` deployed beside `sw.js`; notification clicks always navigate
+to the same-origin inbox. Push payloads use generic text and never cache private data.
+
+Run `node tests/notifications.browser.cjs` after `npm run build` for controlled
+inbox/read-state/preference/error/mobile checks. Existing `npm run test:pwa` covers
+service worker caching, offline recovery and update behavior. Live OS push delivery
+requires server signing keys, HTTPS, browser permission, and device checks.
