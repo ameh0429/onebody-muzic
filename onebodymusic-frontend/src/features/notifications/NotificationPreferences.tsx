@@ -3,12 +3,17 @@ import { useQuery } from '@tanstack/react-query';
 import { queryClient } from '../../lib/query';
 import { api, message } from '../../lib/api';
 import { useAuth } from '../auth/AuthProvider';
-import { browserSubscription, disableBrowserPush, enableBrowserPush, type Preferences } from './notifications';
+import { rememberPushDevice, browserSubscription, disableBrowserPush, enableBrowserPush, type Preferences } from './notifications';
 export default function NotificationPreferences() {
   const { user } = useAuth(); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [subscribed, setSubscribed] = useState(false);
   const result = useQuery({ queryKey: ['notification-preferences', user!.id], queryFn: async () => (await api.get<Preferences>('/notifications/preferences')).data });
   const options = useQuery({ queryKey: ['push-options', user!.id], queryFn: async () => (await api.get<{ enabled: boolean; publicKey: string | null }>('/notifications/push/options')).data });
-  useEffect(() => { let active = true; void browserSubscription().then(s => { if (active) setSubscribed(!!s); }).catch(() => undefined); return () => { active = false; }; }, []);
+  useEffect(() => {
+    let active = true;
+    const check = () => { void browserSubscription().then(s => { if (active) setSubscribed(!!s); }).catch(() => undefined); };
+    check(); window.addEventListener('push-subscription-changed', check);
+    return () => { active = false; window.removeEventListener('push-subscription-changed', check); };
+  }, [user!.id]);
   async function save(next: Preferences) {
     setBusy(true); setError(''); setNotice('');
     const previous = result.data;
@@ -22,7 +27,7 @@ export default function NotificationPreferences() {
       if (subscribed && result.data?.push) { await disableBrowserPush(); setSubscribed(false); }
       else { await enableBrowserPush(options.data!.publicKey!); setSubscribed(true); }
       const next = { ...result.data!, push: !(subscribed && result.data?.push) };
-      await api.patch('/notifications/preferences', next); await result.refetch(); setNotice(next.push ? 'Push notifications enabled.' : 'Push notifications disabled.');
+      await api.patch('/notifications/preferences', next); await result.refetch(); rememberPushDevice(user!.id, next.push); setNotice(next.push ? 'Push notifications enabled.' : 'Push notifications disabled.');
     } catch (err) { setError(message(err)); } finally { setBusy(false); }
   }
   return <section className="notification-preferences" aria-labelledby="notification-preferences-title"><h3 id="notification-preferences-title">Notification preferences</h3>

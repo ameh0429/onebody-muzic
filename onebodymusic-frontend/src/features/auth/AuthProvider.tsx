@@ -1,4 +1,4 @@
-import { unsubscribeBrowserPush } from '../notifications/notifications';
+import { restoreBrowserPush, unsubscribeBrowserPush } from '../notifications/notifications';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import axios from 'axios';
 import { api, setAccessToken, setSessionRenewal } from '../../lib/api';
@@ -38,7 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clear, renew]);
   const logout = useCallback(async () => {
     localStorage.setItem(LOGOUT_PENDING, '1'); clear();
-    void unsubscribeBrowserPush().catch(() => undefined); setLoading(true); setNotice('');
+    setLoading(true); setNotice('');
+    await unsubscribeBrowserPush().catch(() => undefined);
     try { await logoutSession(); localStorage.removeItem(LOGOUT_PENDING); }
     catch { if (mounted.current) setNotice('Signed out on this page. Server sign-out is pending; reconnect and retry to finish.'); }
     finally { if (mounted.current) setLoading(false); }
@@ -64,6 +65,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const timer = window.setInterval(() => void check(), 30000); const focus = () => void check(); window.addEventListener('focus', focus);
     return () => { clearInterval(timer); window.removeEventListener('focus', focus); };
   }, [user?.id, renew]);
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    void restoreBrowserPush(user.id, controller.signal).then(() => {
+      if (!controller.signal.aborted) window.dispatchEvent(new Event('push-subscription-changed'));
+      if (!controller.signal.aborted) void queryClient.invalidateQueries({ queryKey: ['notification-preferences', user.id] });
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [user?.id]);
   async function login(email: string, password: string) {
     const attempt = ++version.current; const data = await loginSession(email.trim().toLowerCase(), password);
     if (!mounted.current || attempt !== version.current) return;

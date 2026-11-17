@@ -101,3 +101,7 @@
 
 .topbar-actions { display:flex; align-items:center; gap:12px; flex-shrink:0; }
 @media(max-width:374px) { .topbar { padding-left:12px; padding-right:12px; }.topbar-actions { gap:0; }.mobile-brand { font-size:.85rem; gap:6px; } }
+
+.notification-toast { position: fixed; top: 90px; right: 20px; z-index: 100; width: min(360px, calc(100vw - 40px)); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: 0 8px 32px #0005; }
+.notification-toast p { margin: 8px 0; }
+.notification-toast .quiet { margin-left: 16px; }
