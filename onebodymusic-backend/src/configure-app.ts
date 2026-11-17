@@ -27,6 +27,8 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+  // Do not register UI, JSON, YAML or static documentation routes in production.
+  if (config.get('NODE_ENV', { infer: true }) === 'production') return;
   const options = new DocumentBuilder()
     .setTitle('OnebodyMusic API')
     .setDescription('Private church music library and rehearsal management API. Includes pending member registration and administrator approval, active-account JWT authentication, role-based library and media management, authorized range audio playback, personal/rehearsal playlists, and rehearsal scheduling. All protected requests recheck current account status. Dates are UTC ISO 8601. List endpoints use page/limit pagination. Authentication attempts are rate limited with Retry-After on 429 responses.')

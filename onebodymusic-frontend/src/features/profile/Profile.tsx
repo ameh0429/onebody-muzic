@@ -59,7 +59,7 @@ export default function Profile() {
       <h2 className="mt-5">{user?.name}</h2><p className="subtle mt-1 break-all">{user?.email}</p>
       <span className="pill my-5">{user?.role === 'ADMIN' ? 'Administrator' : 'Church member'} · Active</span>
       <div className="profile-picture-form">
-        <p id="profile-picture-help" className="subtle text-sm">Click your picture to change it. Selected images upload immediately. JPEG, PNG or WebP · up to {Math.round(imageLimit / 1048576)} MB. Profile pictures use a public image link; choose a photo you’re comfortable sharing.</p>
+        <p id="profile-picture-help" className="subtle text-sm">JPEG, PNG or WebP · up to {Math.round(imageLimit / 1048576)} MB.</p>
         {user?.profileImageUrl && <button type="button" className="btn secondary mt-4" disabled={!!busy} onClick={() => void removePicture()}><Trash2 size={18}/>{busy === 'remove' ? 'Removing…' : 'Remove picture'}</button>}
         {busy === 'picture' && <p role="status" className="text-accent mt-4">{progress < 100 ? `Sending picture… ${progress}%` : 'Picture sent. Finishing upload…'}</p>}
       </div>

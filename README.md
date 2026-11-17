@@ -1,4 +1,8 @@
 # onebody-muzic
+## Backend
+
+The NestJS/PostgreSQL API is in [onebodymusic-backend](onebodymusic-backend/README.md). See the [Render deployment guide](onebodymusic-backend/docs/DEPLOYMENT.md) for environment settings, production scripts, safe migrations, verification and troubleshooting. The root `render.yaml` defines the API and managed PostgreSQL services.
+
 ## Frontend
 
 The mobile-first React PWA is in [`onebodymusic-frontend`](onebodymusic-frontend/README.md).

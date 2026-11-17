@@ -33,7 +33,10 @@
     "test:security:db": "npm run build && tsx --test test/security.database.integration.ts",
     "test:integration": "npm run build && tsx --test --test-concurrency=1 test/*.integration.ts",
     "test:all": "npm run typecheck && npm test && npm run test:integration",
-    "media:check": "tsx src/media/check-cloudinary.ts"
+    "media:check": "tsx src/media/check-cloudinary.ts",
+    "build:prod": "npm run build",
+    "db:status:prod": "node dist/database/migrate.js status",
+    "deploy:migrate": "npm run db:migrate:prod"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",
