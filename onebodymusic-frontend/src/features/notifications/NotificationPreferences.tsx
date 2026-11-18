@@ -36,7 +36,7 @@ export default function NotificationPreferences() {
       <label className="notification-setting"><input type="checkbox" checked={result.data.rehearsals} disabled={busy} onChange={e => void save({ ...result.data!, rehearsals: e.target.checked })}/>Rehearsal and setlist changes</label>
       <label className="notification-setting"><input type="checkbox" checked={result.data.reminders} disabled={busy} onChange={e => void save({ ...result.data!, reminders: e.target.checked })}/>Rehearsal reminders (24 hours before)</label>
       <button className="btn secondary" disabled={busy || (!(subscribed && result.data.push) && !options.data?.enabled)} onClick={() => void togglePush()}>{subscribed && result.data.push ? 'Disable push notifications' : 'Enable notifications on this device'}</button>
-      <p className="subtle text-sm">{options.isError ? 'Could not check push availability. Reload to retry.' : options.data?.enabled ? 'Push alerts hide private details. Permission is optional; your inbox works without it. Disabling push stops alerts on all your devices.' : 'Push notifications are not configured yet. You can still use your inbox.'}</p>
+      <p className="subtle text-sm">{options.isError ? 'Could not check push availability. Reload to retry.' : options.data?.enabled ? 'Disabling push stops alerts on all your devices.' : 'Push notifications are not configured yet. You can still use your inbox.'}</p>
     </>}{error && <p className="error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
   </section>;
 }
