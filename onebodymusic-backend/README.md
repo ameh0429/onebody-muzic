@@ -1066,8 +1066,7 @@ replacing the existing alert. Reading an inbox item suppresses pending push for 
 Signing out unsubscribes the current browser; it does not disable other devices.
 No private inbox contents or credentials are stored in the service worker cache.
 
-Email delivery is not configured in this repository. Pending/suspended accounts
-cannot access the inbox until active, and approval alerts are visible after sign-in.
+Pending/suspended accounts cannot access the inbox until active, and approval alerts are visible after sign-in.
 New-music digests and provider-processing alerts are not part of this initial release.
 
 Validation: `npm test` and `npm run test:integration` (dedicated migrated test database).
@@ -1075,3 +1074,29 @@ The integration suite covers transactional rollback, draft visibility, recipient
 isolation, read state, preferences, cancellation, access revocation and reminder
 idempotence. Push provider behavior is exercised with a test double; real browser
 push delivery still requires configured keys and a supported device.
+
+### Account approval email via Gmail
+
+Apply migration `013-approval-email` using `npm run db:migrate` in development
+or the existing production migration command during deployment. Gmail delivery
+is disabled by default. To enable it, set these values on the **backend host**:
+
+| Variable | Value |
+| --- | --- |
+| `APPROVAL_EMAIL_ENABLED` | `true` |
+| `GMAIL_SMTP_USER` | Dedicated Gmail address with Google 2-Step Verification enabled |
+| `GMAIL_SMTP_APP_PASSWORD` | Google App Password for that account, stored as a secret |
+| `APP_FRONTEND_ORIGIN` | Public HTTPS frontend origin, with no path or trailing slash |
+
+See [Google App Passwords](https://support.google.com/accounts/answer/185833).
+The host needs outbound TCP access to `smtp.gmail.com:465` for SMTP over TLS.
+An HTTPS-only outbound proxy cannot carry this connection.
+
+A pending-to-active transition queues an email in the approval transaction.
+The worker checks the queue once a minute and sends a plain-text link to
+`/login`. The recipient signs in with their existing password. The queue retains
+approvals for up to seven days, including approvals made while delivery is
+disabled. Existing accounts are not backfilled. Delivery stops after three
+attempts, with five minutes between retries. If the worker stops after Gmail
+accepts a message but before PostgreSQL records completion, delivery may repeat.
+The worker runs only while the API is running.
