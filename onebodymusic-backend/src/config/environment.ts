@@ -3,12 +3,6 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
-  @IsIn(['true', 'false'])
-  APPROVAL_EMAIL_ENABLED: string = 'false';
-  @IsOptional() @IsString() GMAIL_SMTP_USER?: string;
-  @IsOptional() @IsString() GMAIL_SMTP_APP_PASSWORD?: string;
-  @IsOptional() @IsString() APP_FRONTEND_ORIGIN?: string;
-
   @IsOptional() @IsString() WEB_PUSH_PUBLIC_KEY?: string;
   @IsOptional() @IsString() WEB_PUSH_PRIVATE_KEY?: string;
   @IsOptional() @IsString() WEB_PUSH_SUBJECT?: string;
@@ -132,20 +126,6 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
       const key = createECDH('prime256v1'); key.setPrivateKey(Buffer.from(validated.WEB_PUSH_PRIVATE_KEY!, 'base64url'));
       if (key.getPublicKey().toString('base64url') !== validated.WEB_PUSH_PUBLIC_KEY) throw new Error();
     } catch { throw new Error('Invalid WEB_PUSH signing configuration: supply matching VAPID keys and a contact subject.'); }
-  }
-  if (validated.APPROVAL_EMAIL_ENABLED === 'true') {
-    const sender = validated.GMAIL_SMTP_USER;
-    const password = validated.GMAIL_SMTP_APP_PASSWORD;
-    if (typeof sender !== 'string' || !/^[a-z0-9.+]+@gmail\.com$/i.test(sender)) {
-      throw new Error('Approval email requires a Gmail address in GMAIL_SMTP_USER.');
-    }
-    if (typeof password !== 'string' || !/^[a-z]{16}$/i.test(password.replace(/\s/g, ''))) {
-      throw new Error('Approval email requires a Google App Password in GMAIL_SMTP_APP_PASSWORD.');
-    }
-    const origin = validated.APP_FRONTEND_ORIGIN;
-    if (typeof origin !== 'string' || !origin.startsWith('https://') || URL.parse(origin)?.origin !== origin) {
-      throw new Error('Approval email requires the public HTTPS app origin in APP_FRONTEND_ORIGIN.');
-    }
   }
   const errors = validateSync(validated, { skipMissingProperties: false });
   const origins = validated.CORS_ALLOWED_ORIGINS;

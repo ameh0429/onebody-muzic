@@ -4,6 +4,5 @@ import { DatabaseModule } from '../database/database.module';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationsWorker } from './notifications.worker';
-import { ApprovalEmailWorker } from './approval-email.worker';
-@Module({ imports: [DatabaseModule, AuthModule], controllers: [NotificationsController], providers: [NotificationsService, NotificationsWorker, ApprovalEmailWorker] })
+@Module({ imports: [DatabaseModule, AuthModule], controllers: [NotificationsController], providers: [NotificationsService, NotificationsWorker] })
 export class NotificationsModule {}

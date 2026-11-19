@@ -1,5 +1,3 @@
-import nodemailer, { type SendMailOptions } from 'nodemailer';
-import type { EnvironmentVariables } from '../src/config/environment';
 import webpush from 'web-push';
 import 'reflect-metadata';
 import 'dotenv/config';
@@ -10,7 +8,6 @@ import { ConfigService } from '@nestjs/config';
 import { createDatabase } from '../src/database/connection';
 import { Playlist, PlaylistPublicationStatus, PlaylistType, Rehearsal, Role, User, UserStatus } from '../src/database/models';
 import { NotificationsService } from '../src/notifications/notifications.service';
-import { ApprovalEmailWorker } from '../src/notifications/approval-email.worker';
 import { NotificationsWorker } from '../src/notifications/notifications.worker';
 import type { UserResponseDto } from '../src/auth/dto/user-response.dto';
 import { QueryTypes } from 'sequelize';
@@ -44,55 +41,6 @@ test('notification events, isolation, preferences and reminders',async t=>{
   await t.test('rolled back events do not escape',async()=>{
    await assert.rejects(db.transaction(async transaction=>{await User.create({name:'rollback',email:`rollback-${suffix}@example.test`,passwordHash},{transaction});throw new Error('rollback');}));
    assert.equal((await service.list(actor(admin),1)).data.some(n=>n.body==='rollback'),false);
-  });
-  await t.test('approval email queues on commit and retries with a sign-in link', async () => {
-   const pending = await make('email-approval', Role.MEMBER, UserStatus.PENDING);
-   const config = new ConfigService<EnvironmentVariables, true>({
-    GMAIL_SMTP_USER: 'onebodymusic@example.test',
-    GMAIL_SMTP_APP_PASSWORD: 'testpasswordonly',
-    APP_FRONTEND_ORIGIN: 'https://app.example.test',
-   });
-   const emailWorker = new ApprovalEmailWorker(db, config);
-   const messages: SendMailOptions[] = [];
-   const smtp = t.mock.method(nodemailer, 'createTransport', () => ({
-    async sendMail(message: SendMailOptions) {
-     assert.ok(message.to && typeof message.to === 'object' && 'address' in message.to);
-     if (message.to.address !== pending.email) return;
-     messages.push(message);
-     if (messages.length === 1) throw new Error('SMTP temporarily unavailable');
-    },
-   }));
-   const getJobs = () => db.query<{ attempts: number; finishedAt: Date | null }>(
-    'SELECT attempts, "finishedAt" FROM "ApprovalEmail" WHERE "userId"=:id',
-    { type: QueryTypes.SELECT, replacements: { id: pending.id } },
-   );
-
-   try {
-    await assert.rejects(db.transaction(async transaction => {
-     await User.update({ status: UserStatus.ACTIVE }, { where: { id: pending.id }, transaction });
-     throw new Error('rollback');
-    }), /rollback/);
-    assert.deepEqual(await getJobs(), []);
-    await pending.update({ status: UserStatus.ACTIVE });
-    await pending.update({ status: UserStatus.ACTIVE });
-    assert.equal((await getJobs()).length, 1);
-
-    await emailWorker.tick();
-    assert.deepEqual(await getJobs(), [{ attempts: 1, finishedAt: null }]);
-    await emailWorker.tick();
-    assert.equal(messages.length, 1);
-    await db.query('UPDATE "ApprovalEmail" SET "nextAttemptAt"=now() WHERE "userId"=:id', {
-     replacements: { id: pending.id },
-    });
-    await Promise.all([emailWorker.tick(), emailWorker.tick()]);
-    assert.equal(messages.length, 2);
-    assert.match(String(messages[1]?.text), /https:\/\/app\.example\.test\/login/);
-    const [job] = await getJobs();
-    assert.equal(job?.attempts, 2);
-    assert.ok(job.finishedAt);
-   } finally {
-    smtp.mock.restore();
-   }
   });
   let notificationId='';
   await t.test('draft visibility, publication, coalesced changes, unpublication',async()=>{
