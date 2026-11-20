@@ -15,6 +15,7 @@ const delay = ms => new Promise(r=>setTimeout(r,ms));
   const user={id:'notification-member',name:'Choir Member',email:'member@example.test',role:'MEMBER',status:'ACTIVE'};
   let items=[{id:'notice-one',kind:'rehearsal-updated',title:'Rehearsal updated',body:'Sunday preparation',href:'/rehearsals',createdAt:new Date().toISOString(),readAt:null},{id:'notice-two',kind:'account',title:'Your account is approved',body:'Welcome to OnebodyMusic',href:'/profile',createdAt:new Date().toISOString(),readAt:null}];
   let prefs={rehearsals:true,reminders:true,push:false};let rejectRead=false;
+  let emailPrefs={enabled:true,rehearsals:false,reminders:false};
   await page.route('**/api/v1/**',async route=>{
    const request=route.request();const path=new URL(request.url()).pathname.replace('/api/v1','');const method=request.method();
    const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
@@ -22,6 +23,10 @@ const delay = ms => new Promise(r=>setTimeout(r,ms));
    if(path==='/auth/me')return json(user);
    if(path==='/notifications')return json({data:items,unreadCount:items.filter(i=>!i.readAt).length,total:items.length,page:1,totalPages:1});
    if(path==='/notifications/preferences'){if(method==='PATCH')prefs=request.postDataJSON();return json(prefs);}
+   if(path==='/notifications/email/preferences'){
+    if(method==='PATCH')emailPrefs={...emailPrefs,...request.postDataJSON()};
+    return json(emailPrefs);
+   }
    if(path==='/notifications/push/options')return json({enabled:false,publicKey:null});
    if(path.startsWith('/notifications/')&&method==='PATCH'){
     if(rejectRead)return json({message:'Could not save notification'},500);
@@ -37,6 +42,15 @@ const delay = ms => new Promise(r=>setTimeout(r,ms));
   await page.getByRole('button',{name:'View details'}).nth(1).click();await page.getByRole('heading',{name:'Your profile',exact:true}).waitFor();
   await page.getByRole('checkbox',{name:'Rehearsal reminders (24 hours before)',exact:true}).uncheck();await page.getByText('Notification preferences saved.',{exact:true}).waitFor();assert.equal(prefs.reminders,false);
   assert.equal(await page.getByRole('button',{name:'Enable notifications on this device'}).isDisabled(),true);
+  const emailReminders=page.getByRole('checkbox',{name:'Email me rehearsal reminders',exact:true});
+  assert.equal(await emailReminders.isChecked(),false);
+  await emailReminders.check();
+  await page.getByText('Email preferences saved.',{exact:true}).waitFor();
+  assert.equal(emailPrefs.reminders,true);
+  assert.equal(prefs.reminders,false);
+  await page.reload();
+  await emailReminders.waitFor();
+  assert.equal(await emailReminders.isChecked(),true);
   for(const width of [320,390,768,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Profile overflow at ${width}: ${await page.evaluate(()=>Array.from(document.querySelectorAll('*')).filter(e=>e.getBoundingClientRect().right>innerWidth).slice(0,8).map(e=>({tag:e.tagName,class:e.className,width:e.getBoundingClientRect().width}))) .then(JSON.stringify)}`);}
   await page.getByRole('link',{name:'Notifications',exact:true}).click();
   for(const width of [320,390,768,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Inbox overflow at ${width}`);}

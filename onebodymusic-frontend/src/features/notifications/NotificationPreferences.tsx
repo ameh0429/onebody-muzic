@@ -4,10 +4,34 @@ import { queryClient } from '../../lib/query';
 import { api, message } from '../../lib/api';
 import { useAuth } from '../auth/AuthProvider';
 import { rememberPushDevice, browserSubscription, disableBrowserPush, enableBrowserPush, type Preferences } from './notifications';
+interface EmailPreferences {
+  enabled: boolean;
+  rehearsals: boolean;
+  reminders: boolean;
+}
+
 export default function NotificationPreferences() {
   const { user } = useAuth(); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [subscribed, setSubscribed] = useState(false);
   const result = useQuery({ queryKey: ['notification-preferences', user!.id], queryFn: async () => (await api.get<Preferences>('/notifications/preferences')).data });
   const options = useQuery({ queryKey: ['push-options', user!.id], queryFn: async () => (await api.get<{ enabled: boolean; publicKey: string | null }>('/notifications/push/options')).data });
+  const email = useQuery({
+    queryKey: ['email-preferences', user!.id],
+    queryFn: async () => (await api.get<EmailPreferences>('/notifications/email/preferences')).data,
+  });
+  async function saveEmail(next: Pick<EmailPreferences, 'rehearsals' | 'reminders'>) {
+    setBusy(true); setError(''); setNotice('');
+    const key = ['email-preferences', user!.id];
+    const previous = email.data;
+    queryClient.setQueryData(key, { ...previous, ...next });
+    try {
+      const response = await api.patch<EmailPreferences>('/notifications/email/preferences', next);
+      queryClient.setQueryData(key, response.data);
+      setNotice('Email preferences saved.');
+    } catch (err) {
+      queryClient.setQueryData(key, previous);
+      setError(message(err));
+    } finally { setBusy(false); }
+  }
   useEffect(() => {
     let active = true;
     const check = () => { void browserSubscription().then(s => { if (active) setSubscribed(!!s); }).catch(() => undefined); };
@@ -37,6 +61,16 @@ export default function NotificationPreferences() {
       <label className="notification-setting"><input type="checkbox" checked={result.data.reminders} disabled={busy} onChange={e => void save({ ...result.data!, reminders: e.target.checked })}/>Rehearsal reminders (24 hours before)</label>
       <button className="btn secondary" disabled={busy || (!(subscribed && result.data.push) && !options.data?.enabled)} onClick={() => void togglePush()}>{subscribed && result.data.push ? 'Disable push notifications' : 'Enable notifications on this device'}</button>
       <p className="subtle text-sm">{options.isError ? 'Could not check push availability. Reload to retry.' : options.data?.enabled ? 'Disabling push stops alerts on all your devices.' : 'Push notifications are not configured yet. You can still use your inbox.'}</p>
-    </>}{error && <p className="error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+    </>}
+    {email.data?.enabled && <fieldset>
+      <legend>Email notifications</legend>
+      <label className="notification-setting"><input type="checkbox" checked={email.data.rehearsals} disabled={busy}
+        onChange={e => void saveEmail({ rehearsals: e.target.checked, reminders: email.data!.reminders })}/>Email me about rehearsal and setlist changes</label>
+      <label className="notification-setting"><input type="checkbox" checked={email.data.reminders} disabled={busy}
+        onChange={e => void saveEmail({ rehearsals: email.data!.rehearsals, reminders: e.target.checked })}/>Email me rehearsal reminders</label>
+      <p className="subtle text-sm">Account access emails are sent separately.</p>
+    </fieldset>}
+    {email.isError && <p className="error" role="alert">Could not load email preferences. <button className="quiet" onClick={() => void email.refetch()}>Retry</button></p>}
+    {error && <p className="error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
   </section>;
 }

@@ -110,3 +110,39 @@ With NODE_ENV=production, Swagger UI, JSON/YAML schemas and associated static ro
 | Restart lost data | Verify DATABASE_URL references managed PostgreSQL, not a disposable local container. Keep production assets in Cloudinary. |
 
 No Render deployment, production credential validation or fresh hosted smoke test is implied by local verification. Run this checklist on the actual service after deployment.
+
+## Gmail SMTP notifications
+
+Run migration `013-email-notifications` before deploying the API. Email is off
+by default. To enable it, turn on 2-Step Verification in the sender's Google
+account and create a [Google App Password](https://support.google.com/accounts/answer/185833).
+Add these variables in the Render API service's Environment settings:
+
+| Variable | Value |
+| --- | --- |
+| `EMAIL_ENABLED` | `true` |
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT`, `SMTP_SECURE` | `465` and `true` for TLS, or `587` and `false` for required STARTTLS |
+| `SMTP_USER` | Full email address of the sending account |
+| `SMTP_APP_PASSWORD` | Google App Password stored as a secret |
+| `EMAIL_FROM` | Sending address or `OnebodyMusic <sender@gmail.com>` using the same address |
+| `APP_PUBLIC_URL` | Public HTTPS origin of the frontend |
+| `EMAIL_START_AT` | UTC ISO timestamp for rollout. Obtain it with `date -u +%Y-%m-%dT%H:%M:%SZ`. Keep it across restarts and advance it when re-enabling after an outage if you want to discard mail queued before re-enablement. |
+| `EMAIL_BATCH_SIZE` | Optional. Queue records processed per worker tick, from 1 to 30. Defaults to 5. |
+
+Use a Render plan that permits outbound SMTP. To test delivery after enabling the
+system, register a test account you control and approve it as an admin. Verify
+that the admin gets a pending registration alert and the test account gets its
+approval email. In Profile, enable rehearsal email preferences for the test
+account and publish a rehearsal scheduled within 24 hours.
+
+Email starts with new events at the configured cutoff. Account approval and
+access changes go to the affected account, and pending registration goes to active
+admins. Rehearsal announcements, changes, cancellations and reminders require the
+corresponding email opt-in. Setlist edits within five minutes are combined.
+Reminders start within 24 hours of the current schedule and include the time in UTC.
+The worker discards alerts that are no longer eligible or are more than a day old
+and retries temporary failures up to twice. SMTP acceptance and database commit are
+separate operations, so an interrupted delivery can be retried with the same
+message ID. Gmail imposes sending limits. Check those limits before enabling
+email for the full membership.
