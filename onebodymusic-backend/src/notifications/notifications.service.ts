@@ -3,7 +3,7 @@ import { InjectConnection } from '@nestjs/sequelize';
 import { ConfigService } from '@nestjs/config';
 import { QueryTypes, Transaction } from 'sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { NotificationPreferences, PushSubscriptionDto } from './notifications.dto';
+import { EmailPreferences, NotificationPreferences, PushSubscriptionDto } from './notifications.dto';
 import { UserResponseDto } from '../auth/dto/user-response.dto';
 
 export interface InboxItem { id: string; kind: string; title: string; body: string; href: string; createdAt: Date; readAt: Date | null }
@@ -39,6 +39,20 @@ export class NotificationsService {
     await this.db.query(`INSERT INTO "NotificationPreference" ("userId",rehearsals,reminders,push) VALUES (:userId,:rehearsals,:reminders,:push)
       ON CONFLICT ("userId") DO UPDATE SET rehearsals=excluded.rehearsals,reminders=excluded.reminders,push=excluded.push`, { replacements: { userId, ...dto } });
     return dto;
+  }
+  async emailPreferences(userId: string) {
+    const [preferences] = await this.db.query<EmailPreferences>(
+      'SELECT "emailRehearsals" AS rehearsals, "emailReminders" AS reminders FROM "NotificationPreference" WHERE "userId"=:userId',
+      { type: QueryTypes.SELECT, replacements: { userId } },
+    );
+    return { enabled: this.config.get('EMAIL_ENABLED') === 'true', rehearsals: false, reminders: false, ...preferences };
+  }
+  async saveEmailPreferences(userId: string, dto: EmailPreferences) {
+    await this.db.query(`INSERT INTO "NotificationPreference" ("userId","emailRehearsals","emailReminders")
+      VALUES (:userId,:rehearsals,:reminders) ON CONFLICT ("userId") DO UPDATE SET
+      "emailRehearsals"=excluded."emailRehearsals","emailReminders"=excluded."emailReminders"`,
+    { replacements: { userId, ...dto } });
+    return this.emailPreferences(userId);
   }
   async subscribe(userId: string, dto: PushSubscriptionDto) {
     if (!this.options().enabled) throw new ServiceUnavailableException('Push notifications are not configured yet');
