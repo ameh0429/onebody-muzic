@@ -1,4 +1,4 @@
-import { restoreBrowserPush, unsubscribeBrowserPush } from '../notifications/notifications';
+import { restoreBrowserPush } from '../notifications/notifications';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import axios from 'axios';
 import { api, setAccessToken, setSessionRenewal } from '../../lib/api';
@@ -39,7 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     localStorage.setItem(LOGOUT_PENDING, '1'); clear();
     setLoading(true); setNotice('');
-    await unsubscribeBrowserPush().catch(() => undefined);
     try { await logoutSession(); localStorage.removeItem(LOGOUT_PENDING); }
     catch { if (mounted.current) setNotice('Signed out on this page. Server sign-out is pending; reconnect and retry to finish.'); }
     finally { if (mounted.current) setLoading(false); }

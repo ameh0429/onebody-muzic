@@ -1,3 +1,4 @@
+import { up as retireEmailUp, down as retireEmailDown } from './migrations/014-retire-email-notifications';
 import { up as emailUp, down as emailDown } from './migrations/013-email-notifications';
 import { up as notificationsUp, down as notificationsDown } from './migrations/012-notifications';
 import { up as featuredUp, down as featuredDown } from './migrations/011-song-featured-artists';
@@ -62,7 +63,8 @@ export function createMigrator(database: Sequelize): Umzug<Sequelize> {
       up: ({ context }) => featuredUp(context),
       down: ({ context }) => featuredDown(context),
     }, { name: '012-notifications', up: ({ context }) => notificationsUp(context), down: ({ context }) => notificationsDown(context) },
-      { name: '013-email-notifications', up: ({ context }) => emailUp(context), down: ({ context }) => emailDown(context) }],
+      { name: '013-email-notifications', up: ({ context }) => emailUp(context), down: ({ context }) => emailDown(context) },
+      { name: '014-retire-email-notifications', up: ({ context }) => retireEmailUp(context), down: ({ context }) => retireEmailDown(context) }],
     storage: new SequelizeStorage({ sequelize: database, tableName: 'SequelizeMeta' }),
     logger: undefined,
   });

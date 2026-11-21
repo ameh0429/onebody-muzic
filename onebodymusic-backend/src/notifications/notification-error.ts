@@ -5,7 +5,7 @@ export function notificationFailureReason(error: unknown): string {
   const nested = cause && typeof cause === 'object' ? cause as Record<string, unknown> : {};
   const code = nested.code ?? record.code;
   switch (code) {
-    case '42P01': return 'database table missing (42P01); apply migrations 012-notifications and 013-email-notifications to the runtime database';
+    case '42P01': return 'database table missing (42P01); apply migration 012-notifications to the runtime database';
     case '42703': return 'database column missing (42703); check that all migrations are applied';
     case '42501': return 'database permission denied (42501); check the runtime account permissions for notification tables';
     case '53300': return 'database connection capacity exhausted (53300); check the database connection limit';

@@ -4,7 +4,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserResponseDto } from '../auth/dto/user-response.dto';
 import { NotificationsService } from './notifications.service';
-import { EmailPreferences, NotificationPreferences, NotificationQuery, PushSubscriptionDto, RemovePushDto } from './notifications.dto';
+import { NotificationPreferences, NotificationQuery, PushSubscriptionDto, RemovePushDto } from './notifications.dto';
 @ApiTags('Notifications') @ApiBearerAuth() @UseGuards(JwtAuthGuard)
 @Controller({ path: 'notifications', version: '1' })
 export class NotificationsController {
@@ -17,8 +17,6 @@ export class NotificationsController {
   read(@CurrentUser() actor: UserResponseDto, @Param('id', new ParseUUIDPipe()) id: string) { return this.notifications.read(actor, id); }
   @Get('preferences') preferences(@CurrentUser() actor: UserResponseDto) { return this.notifications.preferences(actor.id); }
   @Patch('preferences') save(@CurrentUser() actor: UserResponseDto, @Body() dto: NotificationPreferences) { return this.notifications.savePreferences(actor.id, dto); }
-  @Get('email/preferences') emailPreferences(@CurrentUser() actor: UserResponseDto) { return this.notifications.emailPreferences(actor.id); }
-  @Patch('email/preferences') saveEmail(@CurrentUser() actor: UserResponseDto, @Body() dto: EmailPreferences) { return this.notifications.saveEmailPreferences(actor.id, dto); }
   @Get('push/options') options() { return this.notifications.options(); }
   @Post('push/subscriptions') subscribe(@CurrentUser() actor: UserResponseDto, @Body() dto: PushSubscriptionDto) { return this.notifications.subscribe(actor.id, dto); }
   @Delete('push/subscriptions') unsubscribe(@CurrentUser() actor: UserResponseDto, @Body() dto: RemovePushDto) { return this.notifications.unsubscribe(actor.id, dto.endpoint); }
