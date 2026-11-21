@@ -9,10 +9,6 @@ export class NotificationPreferences {
   @ApiProperty() @IsBoolean() reminders!: boolean;
   @ApiProperty() @IsBoolean() push!: boolean;
 }
-export class EmailPreferences {
-  @ApiProperty() @IsBoolean() rehearsals!: boolean;
-  @ApiProperty() @IsBoolean() reminders!: boolean;
-}
 export class PushSubscriptionDto {
   @ApiProperty() @IsString() @MaxLength(2048)
   @Matches(/^https:\/\/(?:fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)\/[a-zA-Z0-9_/?=%.~-]+$/)

@@ -30,7 +30,6 @@ export class NotificationsWorker implements OnApplicationBootstrap, BeforeApplic
         AND u.status='ACTIVE' AND coalesce(p.reminders,true) ON CONFLICT ("userId","eventKey") DO NOTHING`);
     // Bound retention and do not send alerts that were queued before this device opted in.
     await db.query(`DELETE FROM "Notification" WHERE "createdAt"<now()-interval '90 days'`);
-    await db.query(`DELETE FROM "EmailNotification" WHERE "createdAt"<now()-interval '90 days'`);
     if (!this.notifications.options().enabled) return;
     // Each worker holds one row lock while sending; separate connections keep API reads responsive.
     for (let batch = 0; batch < 20; batch++) {

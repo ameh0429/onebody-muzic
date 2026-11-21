@@ -3,16 +3,6 @@ import { plainToInstance, Transform, Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsNotEmpty, IsString, IsOptional, Matches, Max, Min, MinLength, validateSync } from 'class-validator';
 
 export class EnvironmentVariables {
-  @IsIn(['true', 'false']) EMAIL_ENABLED = 'false';
-  @IsIn(['true', 'false']) SMTP_SECURE = 'true';
-  @Type(() => Number) @IsIn([465, 587]) SMTP_PORT = 465;
-  @IsOptional() @IsString() SMTP_HOST?: string;
-  @IsOptional() @IsString() SMTP_USER?: string;
-  @IsOptional() @IsString() SMTP_APP_PASSWORD?: string;
-  @IsOptional() @IsString() EMAIL_FROM?: string;
-  @IsOptional() @IsString() APP_PUBLIC_URL?: string;
-  @IsOptional() @IsString() EMAIL_START_AT?: string;
-  @Type(() => Number) @IsInt() @Min(1) @Max(30) EMAIL_BATCH_SIZE = 5;
   @IsOptional() @IsString() WEB_PUSH_PUBLIC_KEY?: string;
   @IsOptional() @IsString() WEB_PUSH_PRIVATE_KEY?: string;
   @IsOptional() @IsString() WEB_PUSH_SUBJECT?: string;
@@ -136,25 +126,6 @@ export function validateEnvironment(config: Record<string, unknown>): Environmen
       const key = createECDH('prime256v1'); key.setPrivateKey(Buffer.from(validated.WEB_PUSH_PRIVATE_KEY!, 'base64url'));
       if (key.getPublicKey().toString('base64url') !== validated.WEB_PUSH_PUBLIC_KEY) throw new Error();
     } catch { throw new Error('Invalid WEB_PUSH signing configuration: supply matching VAPID keys and a contact subject.'); }
-  }
-  if (validated.EMAIL_ENABLED === 'true') {
-    const { SMTP_HOST, SMTP_USER, SMTP_APP_PASSWORD, EMAIL_FROM, APP_PUBLIC_URL, EMAIL_START_AT } = validated;
-    if (SMTP_HOST !== 'smtp.gmail.com' || !SMTP_USER || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(SMTP_USER) ||
-        typeof SMTP_APP_PASSWORD !== 'string' || !SMTP_APP_PASSWORD.trim() ||
-        typeof EMAIL_FROM !== 'string' || /[\r\n]/.test(EMAIL_FROM) ||
-        !(EMAIL_FROM === SMTP_USER || EMAIL_FROM.endsWith(` <${SMTP_USER}>`)) ||
-        (validated.SMTP_SECURE === 'true') !== (validated.SMTP_PORT === 465) ||
-        !EMAIL_START_AT || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(EMAIL_START_AT) ||
-        !Number.isFinite(Date.parse(EMAIL_START_AT))) {
-      throw new Error('Invalid email configuration: check Gmail SMTP host, port, TLS, sender, app password and EMAIL_START_AT (UTC ISO timestamp).');
-    }
-    try {
-      const url = new URL(APP_PUBLIC_URL ?? '');
-      if (url.origin !== APP_PUBLIC_URL?.replace(/\/$/, '') ||
-          (url.protocol !== 'https:' && !(validated.NODE_ENV !== 'production' && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw new Error();
-    } catch {
-      throw new Error('APP_PUBLIC_URL must be the public HTTPS frontend origin (local HTTP is allowed in development).');
-    }
   }
   const errors = validateSync(validated, { skipMissingProperties: false });
   const origins = validated.CORS_ALLOWED_ORIGINS;

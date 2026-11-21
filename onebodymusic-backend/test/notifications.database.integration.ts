@@ -1,5 +1,4 @@
 import webpush from 'web-push';
-import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
 import 'reflect-metadata';
 import 'dotenv/config';
 import assert from 'node:assert/strict';
@@ -9,7 +8,6 @@ import { ConfigService } from '@nestjs/config';
 import { createDatabase } from '../src/database/connection';
 import { Playlist, PlaylistPublicationStatus, PlaylistType, Rehearsal, Role, User, UserStatus } from '../src/database/models';
 import { NotificationsService } from '../src/notifications/notifications.service';
-import { EmailNotificationsWorker } from '../src/notifications/email-notifications.worker';
 import { NotificationsWorker } from '../src/notifications/notifications.worker';
 import type { UserResponseDto } from '../src/auth/dto/user-response.dto';
 import { QueryTypes } from 'sequelize';
@@ -33,6 +31,8 @@ test('notification events, isolation, preferences and reminders',async t=>{
   const admin=await make('admin',Role.ADMIN); const member=await make('member'); const actor=(u:User)=>({id:u.id,role:u.role,status:u.status} as UserResponseDto);
   const login=async(u:User)=>{const r=await call('auth/login','POST',undefined,{email:u.email,password});assert.equal(r.status,200);return(await r.json() as {accessToken:string}).accessToken;};
   const adminToken=await login(admin);const memberToken=await login(member);
+  await service.savePreferences(member.id,{rehearsals:true,reminders:true,push:false});
+  await db.query('UPDATE "NotificationPreference" SET "emailRehearsals"=true, "emailReminders"=true WHERE "userId"=:id',{replacements:{id:member.id}});
   await t.test('registration and approval recipients; no-op updates stay silent',async()=>{
    const pending=await make('pending',Role.MEMBER,UserStatus.PENDING);
    assert.ok((await service.list(actor(admin),1)).data.some(n=>n.kind==='registration'&&n.body==='pending'));
@@ -62,11 +62,6 @@ test('notification events, isolation, preferences and reminders',async t=>{
    assert.equal((await call('notifications/preferences','PATCH',memberToken,{rehearsals:false,reminders:true,push:false})).status,200);
    assert.equal((await call('notifications/preferences','PATCH',memberToken,{rehearsals:'false',reminders:true,push:false})).status,400);
    assert.equal((await call('notifications/preferences','PATCH',memberToken,{rehearsals:true,reminders:true,push:true})).status,503);
-   assert.deepEqual(await (await call('notifications/email/preferences','GET',memberToken)).json(),
-     {enabled:false,rehearsals:false,reminders:false});
-   assert.equal((await call('notifications/email/preferences','PATCH',memberToken,{rehearsals:'false',reminders:true})).status,400);
-   assert.equal((await call('notifications/email/preferences','PATCH',memberToken,{rehearsals:true,reminders:true})).status,200);
-   assert.equal((await service.preferences(member.id)).rehearsals,false);
    assert.equal((await call('notifications/push/subscriptions','POST',memberToken,{endpoint:'http://127.0.0.1/private',p256dh:'x',auth:'x'})).status,400);
   });
   await t.test('concurrent reminder runs deduplicate and honor preferences',async()=>{
@@ -99,66 +94,12 @@ test('notification events, isolation, preferences and reminders',async t=>{
    await admin.update({role:Role.MEMBER});assert.equal((await service.list(actor(admin),1)).data.some(n=>n.kind==='registration'),false);
    const [count]=await db.query<{count:number}>('SELECT count(*)::int AS count FROM "Notification" WHERE "userId"=:id AND kind=\'registration\'',{type:QueryTypes.SELECT,replacements:{id:admin.id}});assert.ok(count!.count>0);
   });
-  await t.test('Gmail delivery uses the durable queue, independent preferences and eligibility checks', async t => {
-   const startAt = new Date().toISOString();
-   const emailConfig = new ConfigService({
-    EMAIL_ENABLED: 'true', EMAIL_START_AT: startAt, EMAIL_BATCH_SIZE: 15, SMTP_HOST: 'smtp.gmail.com',
-    SMTP_PORT: 465, SMTP_SECURE: 'true', SMTP_USER: 'sender@example.test', SMTP_APP_PASSWORD: 'test-app-password',
-    APP_PUBLIC_URL: 'https://choir.example.test', EMAIL_FROM: 'OnebodyMusic <sender@example.test>',
+  await t.test('account and rehearsal events no longer queue email',async()=>{
+   const [count]=await db.query<{count:number}>('SELECT count(*)::int AS count FROM "EmailNotification" WHERE "userId" IN (:ids)',{
+    type:QueryTypes.SELECT,replacements:{ids},
    });
-   const emailService = new NotificationsService(db, emailConfig);
-   const recipient = await make('email-recipient');
-   const approver = await make('email-admin', Role.ADMIN);
-   await service.savePreferences(recipient.id,{rehearsals:false,reminders:false,push:false});
-   await emailService.saveEmailPreferences(recipient.id,{rehearsals:true,reminders:true});
-   const pending = await make('email-pending',Role.MEMBER,UserStatus.PENDING);
-   await pending.update({status:UserStatus.ACTIVE});
-   const draft = await Playlist.findByPk(playlistId, {rejectOnEmpty:true});
-   await draft.update({publicationStatus:PlaylistPublicationStatus.DRAFT});
-   const rehearsal = await Rehearsal.create({
-    title:'Email rehearsal', playlistId, createdById:approver.id, scheduledAt:new Date(Date.now()+3600000),
-   });
-   rehearsalId = rehearsal.id;
-   await draft.update({publicationStatus:PlaylistPublicationStatus.PUBLISHED});
-   await rehearsal.update({description:'First edit'});
-   await rehearsal.update({description:'Second edit'});
-   assert.equal((await service.list(actor(recipient),1)).total,0);
-
-   const sent: SendMailOptions[] = [];
-   let reminderAttempts = 0;
-   const transport = {
-    close() {},
-    async sendMail(message: SendMailOptions) {
-     if (message.subject?.includes('Rehearsal coming up') && reminderAttempts++ === 0) {
-      throw Object.assign(new Error('Temporary SMTP error'), {responseCode: 421});
-     }
-     sent.push(message);
-    },
-   };
-   t.mock.method(nodemailer,'createTransport',() => transport as unknown as Transporter);
-   async function runWorker() {
-    const worker = new EmailNotificationsWorker(emailService,emailConfig);
-    worker.onApplicationBootstrap();
-    await worker.beforeApplicationShutdown();
-   }
-   const forUser = (email: string) => sent.filter(message => (message.to as {address:string}).address === email);
-   await Promise.all([runWorker(),runWorker()]);
-   assert.ok(forUser(approver.email).some(message => message.subject?.includes('Member awaiting approval')));
-   assert.ok(forUser(pending.email).some(message => typeof message.text === 'string' && message.text.includes('https://choir.example.test/login')));
-   assert.deepEqual(forUser(recipient.email).map(message => message.subject),['OnebodyMusic | New rehearsal']);
-   assert.equal(reminderAttempts,1);
-   await db.query(`UPDATE "EmailNotification" SET "sendAfter"=now() WHERE "userId"=:id AND state='pending'`,
-     {replacements:{id:recipient.id}});
-   await runWorker();
-   assert.equal(forUser(recipient.email).filter(message => message.subject?.includes('Rehearsal updated')).length,1);
-   const reminders = forUser(recipient.email).filter(message => message.subject?.includes('Rehearsal coming up'));
-   assert.equal(reminders.length,1);
-   assert.ok(typeof reminders[0]?.text === 'string' && reminders[0].text.includes(' UTC'));
-   await rehearsal.destroy();
-   await recipient.update({status:UserStatus.SUSPENDED});
-   await runWorker();
-   assert.ok(forUser(recipient.email).some(message => message.subject?.includes('Account access updated')));
-   assert.ok(!forUser(recipient.email).some(message => message.subject?.includes('Rehearsal cancelled')));
+   assert.equal(count?.count,0);
+   assert.equal((await call('notifications/email/preferences','GET',memberToken)).status,404);
   });
  } finally {child.kill('SIGTERM');await stopped;if(rehearsalId)await Rehearsal.destroy({where:{id:rehearsalId}});if(playlistId)await Playlist.destroy({where:{id:playlistId}});await User.destroy({where:{id:ids}});await db.close();}
 });
