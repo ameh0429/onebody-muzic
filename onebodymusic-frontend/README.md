@@ -396,7 +396,8 @@ asks for browser permission only when pressed, after server Web Push configurati
 is available. No permission prompt appears at login. Denying permission leaves the
 inbox usable. On iPhone/iPad, use a supported Safari-installed home-screen app.
 **Disable push notifications** disables push account-wide and unsubscribes this
-device. Signing out unsubscribes this device without changing other devices.
+device. Signing out keeps push enabled on this device. Signing in to a different
+account on the same browser removes the previous account’s browser subscription.
 An explicit device opt-in is remembered separately for each account in this
 browser. Returning to that account restores its subscription automatically when
 browser permission is still granted and account push preferences remain enabled.

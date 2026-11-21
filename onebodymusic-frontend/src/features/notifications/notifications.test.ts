@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../../lib/api';
-import { newUnreadNotification, rememberPushDevice, restoreBrowserPush, type InboxItem } from './notifications';
+import { hasBrowserPush, newUnreadNotification, rememberPushDevice, restoreBrowserPush, type InboxItem } from './notifications';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function setup() {
   const values = new Map<string, string>();
@@ -54,4 +54,21 @@ it('does not attach a subscription after an account switch aborts restoration', 
   const post = vi.spyOn(api, 'post');
   await expect(restoreBrowserPush('admin', controller.signal)).rejects.toThrow();
   expect(post).not.toHaveBeenCalled();
+});
+
+it('removes the previous account’s subscription when another account signs in', async () => {
+  const subscription = setup();
+  rememberPushDevice('admin', true);
+  const get = vi.spyOn(api, 'get').mockResolvedValueOnce({ data: { push: true } }).mockResolvedValueOnce({ data: { enabled: true, publicKey: 'a2V5' } });
+  vi.spyOn(api, 'post').mockResolvedValue({});
+  await restoreBrowserPush('admin', new AbortController().signal);
+  expect(await hasBrowserPush('admin')).toBe(true);
+  expect(await hasBrowserPush('member')).toBe(false);
+  get.mockClear();
+
+  await restoreBrowserPush('member', new AbortController().signal);
+
+  expect(subscription.unsubscribe).toHaveBeenCalledOnce();
+  expect(await hasBrowserPush('admin')).toBe(false);
+  expect(get).not.toHaveBeenCalled();
 });

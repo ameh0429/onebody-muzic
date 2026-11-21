@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { queryClient } from '../../lib/query';
 import { api, message } from '../../lib/api';
 import { useAuth } from '../auth/AuthProvider';
-import { rememberPushDevice, browserSubscription, disableBrowserPush, enableBrowserPush, type Preferences } from './notifications';
+import { rememberPushDevice, hasBrowserPush, disableBrowserPush, enableBrowserPush, type Preferences } from './notifications';
 interface EmailPreferences {
   enabled: boolean;
   rehearsals: boolean;
@@ -34,7 +34,7 @@ export default function NotificationPreferences() {
   }
   useEffect(() => {
     let active = true;
-    const check = () => { void browserSubscription().then(s => { if (active) setSubscribed(!!s); }).catch(() => undefined); };
+    const check = () => { void hasBrowserPush(user!.id).then(enabled => { if (active) setSubscribed(enabled); }).catch(() => undefined); };
     check(); window.addEventListener('push-subscription-changed', check);
     return () => { active = false; window.removeEventListener('push-subscription-changed', check); };
   }, [user!.id]);
@@ -49,7 +49,7 @@ export default function NotificationPreferences() {
     setBusy(true); setError(''); setNotice('');
     try {
       if (subscribed && result.data?.push) { await disableBrowserPush(); setSubscribed(false); }
-      else { await enableBrowserPush(options.data!.publicKey!); setSubscribed(true); }
+      else { await enableBrowserPush(user!.id, options.data!.publicKey!); setSubscribed(true); }
       const next = { ...result.data!, push: !(subscribed && result.data?.push) };
       await api.patch('/notifications/preferences', next); await result.refetch(); rememberPushDevice(user!.id, next.push); setNotice(next.push ? 'Push notifications enabled.' : 'Push notifications disabled.');
     } catch (err) { setError(message(err)); } finally { setBusy(false); }
